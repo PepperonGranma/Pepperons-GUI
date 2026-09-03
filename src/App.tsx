@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Dropdown } from './Dropdown'
+import { FirstRunTour } from './FirstRunTour'
 import { QuickStarterGuide } from './QuickStarterGuide'
+import { StartupLoader } from './StartupLoader'
 import {
-  Activity, AppWindow, AudioLines, BatteryCharging, Box, Camera, Check, Clock3,
-  CircleDot as Record, Clipboard, Command, Copy, Cpu, Download, Gamepad2, Gauge, Github, HardDrive, Info, Keyboard, Laptop,
+  Activity, AppWindow, AudioLines, BatteryCharging, Box, Camera, Check,
+  CircleDot as Record, Clipboard, Command, Copy, Cpu, Download, Gamepad2, Gauge, Github, Info, Keyboard, Laptop,
   LayoutDashboard, ListFilter, Menu, Mic2, Minus, Monitor, MoonStar, MousePointer2, Palette, Play, Plus, Radio,
-  RefreshCw, RotateCw, Save, Search, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Square,
-  Sun, Terminal, Trash2, Unplug, Usb, Video, Wifi, WifiOff, X, Zap,
+  RefreshCw, RotateCw, Save, Search, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Square,
+  Sun, Terminal, Trash2, Unplug, Usb, Video, Wifi, X, Zap,
 } from 'lucide-react'
 import { demoApi } from './demoApi'
-import { applyGuidedOptionValue, buildArgs, DEFAULT_CONFIG, DEFAULT_THEME, FALLBACK_OPTIONS, getGuidedOptionValue, QUICK_PRESETS } from './options'
+import { applyGuidedOptionValue, buildArgs, DEFAULT_CONFIG, DEFAULT_THEME, FALLBACK_OPTIONS, getGuidedOptionValue, isGuidedOption, QUICK_PRESETS } from './options'
 import type {
   CliOption, Device, DeviceCapabilities, LiveSettingChange, LogEntry, NavId, RuntimeStatus, SavedProfile, SessionState, StudioConfig, ThemeSettings,
 } from './types'
@@ -29,12 +31,85 @@ const NAV_ITEMS: Array<{ id: NavId; label: string; icon: typeof Activity }> = [
 ]
 
 const ONE_SHOT_OPTIONS = new Set(['--list-apps', '--list-camera-sizes', '--list-cameras', '--list-displays', '--list-encoders'])
+const ONBOARDING_KEY = 'scrcpy-studio:onboarding-v1'
+
+function isFirstRun() {
+  try { return localStorage.getItem(ONBOARDING_KEY) !== 'seen' } catch { return true }
+}
 
 function readStored<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key)
     return raw ? { ...fallback, ...JSON.parse(raw) } : fallback
   } catch { return fallback }
+}
+
+function normalizeConfig(value: unknown): StudioConfig {
+  const candidate = value && typeof value === 'object' ? value as Partial<StudioConfig> : {}
+  const normalized = { ...DEFAULT_CONFIG } as StudioConfig
+  for (const key of Object.keys(DEFAULT_CONFIG) as Array<keyof StudioConfig>) {
+    if (key === 'extras') continue
+    const next = candidate[key]
+    if (typeof next === typeof DEFAULT_CONFIG[key]) (normalized as unknown as Record<string, unknown>)[key] = next
+  }
+  const extras = candidate.extras
+  if (typeof candidate.videoEnabled !== 'boolean' && extras && typeof extras === 'object' && !Array.isArray(extras) && (extras as Record<string, unknown>)['--no-video'] === true) {
+    normalized.videoEnabled = false
+  }
+  normalized.extras = extras && typeof extras === 'object' && !Array.isArray(extras)
+    ? Object.fromEntries(Object.entries(extras).filter(([name, item]) => !isGuidedOption(name) && (typeof item === 'boolean' || typeof item === 'string')))
+    : {}
+  return normalized
+}
+
+function profileDescription(config: StudioConfig) {
+  return config.videoEnabled ? `${config.maxSize}p · ${config.maxFps} fps · ${config.videoCodec.toUpperCase()}` : `Audio only · ${config.audioCodec.toUpperCase()}`
+}
+
+function configurationIssue(config: StudioConfig, capabilities: DeviceCapabilities | null) {
+  if (config.recordingEnabled && !config.recordPath.trim()) return 'Choose a recording destination or turn recording off.'
+  if (config.noPlayback && !config.recordingEnabled && !config.extras['--v4l2-sink']) return 'Record without playback requires an enabled recording destination or a V4L2 sink.'
+  if (config.videoEnabled && capabilities?.video.reported && !capabilities.video.codecs.includes(config.videoCodec)) return `${config.videoCodec.toUpperCase()} is not reported by this device.`
+  if (config.videoEnabled && config.videoEncoder) {
+    const encoder = capabilities?.video.encoders.find((item) => item.name === config.videoEncoder)
+    if (capabilities?.video.reported && !encoder) return `Video encoder ${config.videoEncoder} is unavailable on this device.`
+    if (encoder && encoder.codec !== config.videoCodec) return `Video encoder ${config.videoEncoder} does not support ${config.videoCodec.toUpperCase()}.`
+  }
+  if (config.audioEnabled && config.audioEncoder) {
+    const encoder = capabilities?.audio.encoders.find((item) => item.name === config.audioEncoder)
+    if (capabilities?.audio.reported && !encoder) return `Audio encoder ${config.audioEncoder} is unavailable on this device.`
+    if (encoder && encoder.codec !== config.audioCodec) return `Audio encoder ${config.audioEncoder} does not support ${config.audioCodec.toUpperCase()}.`
+  }
+  if (config.videoEnabled && !config.newDisplay && config.displayId !== '0' && capabilities?.display.displayIds.length && !capabilities.display.displayIds.includes(Number(config.displayId))) return `Display ${config.displayId} is unavailable on this device.`
+  if (config.videoEnabled && config.videoSource === 'camera' && config.cameraId) {
+    const camera = capabilities?.camera.cameras.find((item) => item.id === config.cameraId)
+    if (capabilities?.camera.reported && !camera) return `Camera ${config.cameraId} is unavailable on this device.`
+    if (camera && config.cameraSize && camera.sizes.length && !camera.sizes.includes(config.cameraSize)) return `${config.cameraSize} is unavailable for camera ${config.cameraId}.`
+    if (camera && config.cameraFps && camera.frameRates.length && !camera.frameRates.includes(Number(config.cameraFps))) return `${config.cameraFps} FPS is unavailable for camera ${config.cameraId}.`
+  }
+  return ''
+}
+
+function readProfiles(): SavedProfile[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem('scrcpy-studio:profiles') || '[]')
+    if (!Array.isArray(parsed)) return []
+    const ids = new Set<string>()
+    return parsed.flatMap((item): SavedProfile[] => {
+      if (!item || typeof item !== 'object') return []
+      const raw = item as Partial<SavedProfile>
+      if (typeof raw.id !== 'string' || !raw.id || ids.has(raw.id) || typeof raw.name !== 'string' || !raw.name.trim()) return []
+      ids.add(raw.id)
+      const config = { ...normalizeConfig(raw.config), serial: '' }
+      return [{
+        id: raw.id,
+        name: raw.name.trim(),
+        description: typeof raw.description === 'string' && raw.description.trim() ? raw.description : profileDescription(config),
+        config,
+        updatedAt: typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt) ? raw.updatedAt : Date.now(),
+      }]
+    })
+  } catch { return [] }
 }
 
 function timeNow() {
@@ -52,11 +127,11 @@ function accentInk(hex: string) {
 
 export default function App() {
   const [activeNav, setActiveNav] = useState<NavId>('studio')
-  const [config, setConfig] = useState<StudioConfig>(() => readStored('scrcpy-studio:config', DEFAULT_CONFIG))
-  const [theme, setTheme] = useState<ThemeSettings>(() => readStored('scrcpy-studio:theme', DEFAULT_THEME))
-  const [profiles, setProfiles] = useState<SavedProfile[]>(() => {
-    try { return JSON.parse(localStorage.getItem('scrcpy-studio:profiles') || '[]') } catch { return [] }
+  const [config, setConfig] = useState<StudioConfig>(() => {
+    try { return normalizeConfig(JSON.parse(localStorage.getItem('scrcpy-studio:config') || 'null')) } catch { return structuredClone(DEFAULT_CONFIG) }
   })
+  const [theme, setTheme] = useState<ThemeSettings>(() => readStored('scrcpy-studio:theme', DEFAULT_THEME))
+  const [profiles, setProfiles] = useState<SavedProfile[]>(readProfiles)
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null)
   const [devices, setDevices] = useState<Device[]>([])
   const [session, setSession] = useState<SessionState>({ running: false, status: 'offline' })
@@ -67,6 +142,8 @@ export default function App() {
     { id: 1, time: timeNow(), level: 'info', text: 'Studio initialized. Waiting for a device…' },
   ])
   const [loading, setLoading] = useState(true)
+  const [showLoader, setShowLoader] = useState(true)
+  const [loaderLeaving, setLoaderLeaving] = useState(false)
   const [installing, setInstalling] = useState(false)
   const [installProgress, setInstallProgress] = useState({ progress: 0, message: '' })
   const [search, setSearch] = useState('')
@@ -74,7 +151,7 @@ export default function App() {
   const [mobileNav, setMobileNav] = useState(false)
   const [toast, setToast] = useState('')
   const [wifiAddress, setWifiAddress] = useState('')
-  const [preset, setPreset] = useState('balanced')
+  const [tourOpen, setTourOpen] = useState(isFirstRun)
   const logId = useRef(2)
   const initialized = useRef(false)
   const configRef = useRef(config)
@@ -135,22 +212,31 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    Promise.all([refreshRuntime(), refreshDevices(), api.getSessionState().then(setSession)]).finally(() => {
+    let mounted = true
+    let exitTimer: number | undefined
+    const startup = Promise.allSettled([refreshRuntime(), refreshDevices(), api.getSessionState().then(setSession)])
+    const minimumDisplay = new Promise((resolve) => window.setTimeout(resolve, 2600))
+    Promise.all([startup, minimumDisplay]).then(() => {
+      if (!mounted) return
       initialized.current = true
       setLoading(false)
+      setLoaderLeaving(true)
+      exitTimer = window.setTimeout(() => {
+        if (mounted) setShowLoader(false)
+      }, 420)
     })
     const removeLog = api.onLog((entry) => addLog(entry.level, entry.text))
     const removeState = api.onState((next) => {
       setSession(next)
       if (next.status !== previousSessionStatus.current) {
-        if (next.status === 'live') addLog('success', `Session is live${next.pid ? ` (PID ${next.pid})` : ''}.`)
+        if (next.status === 'live') addLog('success', `Mirroring active${next.pid ? ` (PID ${next.pid})` : ''}.`)
         else if (next.status === 'error') addLog('error', next.error || 'The Scrcpy session failed.')
         previousSessionStatus.current = next.status
       }
     })
     const removeInstall = api.onInstallProgress(setInstallProgress)
     const interval = window.setInterval(refreshDevices, 5000)
-    return () => { removeLog(); removeState(); removeInstall(); window.clearInterval(interval) }
+    return () => { mounted = false; if (exitTimer) window.clearTimeout(exitTimer); removeLog(); removeState(); removeInstall(); window.clearInterval(interval) }
   }, [addLog, refreshDevices, refreshRuntime])
 
   useEffect(() => { localStorage.setItem('scrcpy-studio:config', JSON.stringify(config)) }, [config])
@@ -176,11 +262,13 @@ export default function App() {
     const argsChanged = JSON.stringify(nextArgs) !== JSON.stringify(previousDesiredArgs.current)
     previousDesiredArgs.current = nextArgs
     if (!changedKeys.length && !argsChanged) return
+    const issue = configurationIssue(runtimeConfig, capabilities)
+    if (issue) { addLog('error', `Configuration not applied: ${issue}`); return }
     api.applyConfig({
       args: nextArgs, liveChanges, autoReconnect: config.autoReconnect,
       reason: changedKeys.length === 1 ? `${String(changedKeys[0])} changed` : changedKeys.length ? `${changedKeys.length} settings changed` : 'device capability constraints changed',
     }).catch((error) => addLog('error', `Automatic apply failed: ${error.message}`))
-  }, [config, capabilities?.audio.forwardingSupported, addLog])
+  }, [config, capabilities, addLog])
 
   const refreshCapabilities = useCallback(async (force = false) => {
     const serial = configRef.current.serial
@@ -216,6 +304,8 @@ export default function App() {
   const args = useMemo(() => buildArgs(capabilities?.audio.forwardingSupported === false ? { ...config, audioEnabled: false } : config), [config, capabilities?.audio.forwardingSupported])
   const commandText = `scrcpy${args.length ? ` ${args.join(' ')}` : ''}`
   const selectedDevice = devices.find((device) => device.serial === config.serial)
+  const preset = useMemo(() => QUICK_PRESETS.find((item) => Object.entries(item.patch)
+    .every(([key, value]) => config[key as keyof StudioConfig] === value))?.name || '', [config])
 
   const update = <K extends keyof StudioConfig>(key: K, value: StudioConfig[K]) => {
     setConfig((current) => ({ ...current, [key]: value }))
@@ -250,6 +340,8 @@ export default function App() {
         await api.stop()
         addLog('info', 'Stop requested…')
       } else {
+        const issue = configurationIssue(capabilities?.audio.forwardingSupported === false ? { ...config, audioEnabled: false } : config, capabilities)
+        if (issue) { addLog('error', issue); setToast('Cannot start mirroring — see activity'); return }
         const next = await api.start({ args, liveChanges: liveSettings(config), autoReconnect: config.autoReconnect, reason: session.status === 'error' ? 'retry' : 'manual start' })
         setSession(next)
       }
@@ -267,7 +359,6 @@ export default function App() {
   function applyPreset(name: string) {
     const next = QUICK_PRESETS.find((item) => item.name === name)
     if (!next) return
-    setPreset(name)
     setConfig((current) => ({ ...current, ...next.patch }))
     setToast(`${next.label} preset applied`)
   }
@@ -287,10 +378,13 @@ export default function App() {
   }
 
   function saveProfile() {
-    const name = `Profile ${profiles.length + 1}`
+    const usedNumbers = new Set(profiles.map((profile) => Number(profile.name.match(/^Profile (\d+)$/i)?.[1])).filter(Number.isFinite))
+    let number = 1
+    while (usedNumbers.has(number)) number += 1
+    const name = `Profile ${number}`
     setProfiles((current) => [...current, {
-      id: crypto.randomUUID(), name, description: `${config.maxSize}p · ${config.maxFps} fps · ${config.videoCodec.toUpperCase()}`,
-      config: structuredClone(config), updatedAt: Date.now(),
+      id: crypto.randomUUID(), name, description: profileDescription(config),
+      config: { ...structuredClone(config), serial: '' }, updatedAt: Date.now(),
     }])
     setToast(`${name} saved`)
   }
@@ -312,6 +406,10 @@ export default function App() {
   } as CSSProperties
 
   const pageProps = { config, update, setConfig, addLog }
+  const finishTour = useCallback(() => {
+    try { localStorage.setItem(ONBOARDING_KEY, 'seen') } catch { /* Continue without persistence when storage is unavailable. */ }
+    setTourOpen(false)
+  }, [])
 
   return (
     <div className={`app theme-${theme.mode} density-${theme.density} ${theme.pattern ? 'has-pattern' : ''}`} style={style}>
@@ -340,13 +438,29 @@ export default function App() {
             category={optionsCategory} onCategory={setOptionsCategory} addLog={addLog}
           />}
           {activeNav === 'profiles' && <ProfilesPage profiles={profiles} config={config} onSave={saveProfile}
-            onLoad={(profile) => { setConfig(structuredClone(profile.config)); setToast(`${profile.name} loaded`) }}
-            onRename={(id, name) => setProfiles((current) => current.map((item) => item.id === id ? { ...item, name, updatedAt: Date.now() } : item))}
-            onDelete={(id) => setProfiles((current) => current.filter((item) => item.id !== id))} />}
+            onLoad={(profile) => { setConfig({ ...normalizeConfig(profile.config), serial: configRef.current.serial }); setToast(`${profile.name} loaded`) }}
+            onRename={(id, name) => {
+              const clean = name.trim()
+              if (!clean) { setToast('Profile name cannot be empty'); return }
+              if (clean.length > 64) { setToast('Profile names are limited to 64 characters'); return }
+              if (profiles.some((item) => item.id !== id && item.name.toLocaleLowerCase() === clean.toLocaleLowerCase())) {
+                setToast('That profile name already exists')
+                return
+              }
+              setProfiles((current) => current.map((item) => item.id === id ? { ...item, name: clean, updatedAt: Date.now() } : item))
+              setToast(`${clean} renamed`)
+            }}
+            onDelete={(id) => {
+              const deleted = profiles.find((item) => item.id === id)
+              setProfiles((current) => current.filter((item) => item.id !== id))
+              setToast(deleted ? `${deleted.name} deleted` : 'Profile deleted')
+            }} />}
           {activeNav === 'appearance' && <AppearancePage theme={theme} setTheme={setTheme} onReset={() => setTheme(DEFAULT_THEME)} />}
-          {activeNav === 'guide' && <QuickStarterGuide onNavigate={activateNav} />}
+          {activeNav === 'guide' && <QuickStarterGuide onNavigate={activateNav} onStartTour={() => setTourOpen(true)} />}
         </main>
       </div>
+      <FirstRunTour open={!showLoader && tourOpen} onFinish={finishTour} />
+      {showLoader && <StartupLoader leaving={loaderLeaving} />}
       {toast && <div className="toast"><Check size={16} />{toast}</div>}
     </div>
   )
@@ -443,7 +557,7 @@ function StudioPage(props: PageBaseProps & {
   const videoCodecs = capabilities?.video.codecs.length ? capabilities.video.codecs.map((codec) => codec.toUpperCase()).join(' / ') : 'Not reported'
   const resolution = display?.currentWidth && display.currentHeight ? `${display.currentWidth} × ${display.currentHeight}` : 'Unknown'
   const refreshRate = (value?: number) => value ? `${Math.round(value * 100) / 100} Hz` : 'Unknown'
-  const stateLabel = session.status.replace('-', ' ').toUpperCase()
+  const stateLabel = session.status === 'live' ? 'MIRRORING' : session.status.replace('-', ' ').toUpperCase()
   async function deviceAction(action: string, payload: Record<string, unknown> = {}) {
     const result = await api.adbAction(action, { serial: config.serial, ...payload }).catch((error) => ({ code: 1, output: error.message }))
     addLog(result.code === 0 ? 'success' : 'error', result.output)
@@ -490,7 +604,7 @@ function StudioPage(props: PageBaseProps & {
       </SectionCard>
 
       <SectionCard title="Video" kicker="ENCODING" icon={<Video size={18} />} action={<button className="text-button" onClick={() => onNavigate('video')}>Configure</button>}>
-        <div className="capability-values"><strong>{config.videoCodec.toUpperCase()} · {config.maxFps || 'Unlimited'} FPS</strong><span>{videoCodecs}</span><div className="dense-specs columns"><Spec label="Bitrate" value={config.videoBitRate} /><Spec label="Max size" value={config.maxSize ? `${config.maxSize}px` : 'Native'} /><Spec label="Encoder" value={config.videoEncoder || 'Automatic'} /></div></div>
+        <div className="capability-values"><strong>{config.videoEnabled ? `${config.videoCodec.toUpperCase()} · ${config.maxFps || 'Unlimited'} FPS` : 'Video disabled'}</strong><span>{config.videoEnabled ? videoCodecs : 'Audio-only or control-only session'}</span><div className="dense-specs columns"><Spec label="Bitrate" value={config.videoEnabled ? config.videoBitRate : '—'} /><Spec label="Max size" value={config.videoEnabled ? (config.maxSize ? `${config.maxSize}px` : 'Native') : '—'} /><Spec label="Encoder" value={config.videoEnabled ? (config.videoEncoder || 'Automatic') : '—'} /></div></div>
       </SectionCard>
 
       <SectionCard title="Audio" kicker="FORWARDING" icon={<AudioLines size={18} />} action={<button className="text-button" onClick={() => onNavigate('audio')}>Configure</button>}>
@@ -509,7 +623,7 @@ function StudioPage(props: PageBaseProps & {
         <div className="field-grid triple"><Select label="Codec" value={config.videoCodec} onChange={(value) => update('videoCodec', value as StudioConfig['videoCodec'])} options={[['h264','H.264'],['h265','H.265'],['av1','AV1'],['vp8','VP8'],['vp9','VP9']]} /><Field label="Max FPS" value={config.maxFps} onChange={(value) => update('maxFps', value)} /><Field label="Bitrate" value={config.videoBitRate} onChange={(value) => update('videoBitRate', value)} /></div>
       </SectionCard>
 
-      <SectionCard title="Quick controls" kicker="LIVE + STARTUP" icon={<SlidersHorizontal size={18} />}>
+      <SectionCard title="Quick controls" kicker="MIRRORING + STARTUP" icon={<SlidersHorizontal size={18} />}>
         <div className="switch-grid"><Switch label="Clipboard sync" checked={config.clipboardSync} onChange={(value) => update('clipboardSync', value)} /><Switch label="Show touches" checked={config.showTouches} onChange={(value) => update('showTouches', value)} /><Switch label="Keep awake" checked={config.stayAwake} onChange={(value) => update('stayAwake', value)} /><Switch label="Physical screen off" checked={config.turnScreenOff} onChange={(value) => update('turnScreenOff', value)} /></div>
       </SectionCard>
 
@@ -538,11 +652,12 @@ function VideoPage({ config, update, capabilities }: PageBaseProps & { capabilit
   const cameraOptions: Array<[string, string]> = [['', 'Automatic'], ...(capabilities?.camera.cameras || []).map((camera) => [camera.id, `${camera.id}${camera.facing ? ` · ${camera.facing}` : ''}`] as [string, string])]
   const selectedCamera = capabilities?.camera.cameras.find((camera) => camera.id === config.cameraId)
   const fpsShortcuts = [...new Set([30, 60, ...(capabilities?.display.supportedRefreshRates || []).map(Math.round)])].sort((a, b) => a - b)
-  return <PageFrame title="Video studio" subtitle="Shape the stream before it leaves your Android device." icon={<Video />}>
+  return <PageFrame title="Video studio" subtitle="Shape the mirror before it leaves your Android device." icon={<Video />}>
     <div className="settings-grid">
       <SectionCard title="Capture source" kicker="SOURCE" icon={<Camera size={18} />}>
-        <Segmented value={config.videoSource} onChange={(value) => update('videoSource', value as StudioConfig['videoSource'])} options={[['display', 'Display'], ['camera', 'Camera']]} />
-        {config.videoSource === 'camera' && <div className="field-grid">
+        <Switch label="Forward video" description="Turn this off for an audio-only session." checked={config.videoEnabled} onChange={(value) => update('videoEnabled', value)} />
+        <Segmented disabled={!config.videoEnabled} value={config.videoSource} onChange={(value) => update('videoSource', value as StudioConfig['videoSource'])} options={[['display', 'Display'], ['camera', 'Camera']]} />
+        {config.videoEnabled && config.videoSource === 'camera' && <div className="field-grid">
           <Select label="Camera ID" value={config.cameraId} disabled={Boolean(config.cameraFacing)} onChange={(value) => { update('cameraId', value); if (value) update('cameraFacing', '') }} options={cameraOptions} />
           <Select label="Facing" value={config.cameraFacing} disabled={Boolean(config.cameraId)} onChange={(value) => { update('cameraFacing', value as StudioConfig['cameraFacing']); if (value) update('cameraId', '') }} options={[['', 'Auto'], ['front', 'Front'], ['back', 'Back'], ['external', 'External']]} />
           <Field label="Camera size" value={config.cameraSize} onChange={(value) => update('cameraSize', value)} placeholder="1920x1080" />
@@ -552,25 +667,25 @@ function VideoPage({ config, update, capabilities }: PageBaseProps & { capabilit
         </div>}
       </SectionCard>
       <SectionCard title="Encoding" kicker="QUALITY" icon={<Cpu size={18} />}>
-        <Select label="Video codec" value={config.videoCodec} onChange={(value) => update('videoCodec', value as StudioConfig['videoCodec'])}
+        <Select label="Video codec" value={config.videoCodec} disabled={!config.videoEnabled} onChange={(value) => update('videoCodec', value as StudioConfig['videoCodec'])}
           options={[['h264', 'H.264 · compatible', hasCodecData && !reportedCodecs.includes('h264')], ['h265', 'H.265 · efficient', hasCodecData && !reportedCodecs.includes('h265')], ['av1', 'AV1 · modern', hasCodecData && !reportedCodecs.includes('av1')], ['vp8', 'VP8 · v4.1', hasCodecData && !reportedCodecs.includes('vp8')], ['vp9', 'VP9 · v4.1', hasCodecData && !reportedCodecs.includes('vp9')]]} />
-        <Select label="Video encoder" value={config.videoEncoder} onChange={(value) => update('videoEncoder', value)} options={[['', 'Automatic'], ...(capabilities?.video.encoders.filter((encoder) => encoder.codec === config.videoCodec).map((encoder) => [encoder.name, encoder.name] as [string, string]) || [])]} />
+        <Select label="Video encoder" value={config.videoEncoder} disabled={!config.videoEnabled} onChange={(value) => update('videoEncoder', value)} options={[['', 'Automatic'], ...(capabilities?.video.encoders.filter((encoder) => encoder.codec === config.videoCodec).map((encoder) => [encoder.name, encoder.name] as [string, string]) || [])]} />
         {hasCodecData && <div className="capability-hint"><ShieldCheck size={13} />Reported by device: {reportedCodecs.map((codec) => codec.toUpperCase()).join(', ')}</div>}
-        <div className="field-grid"><Field label="Bit rate" value={config.videoBitRate} onChange={(value) => update('videoBitRate', value)} hint="Supports K and M suffixes" />
-          <Field label="Video buffer" value={config.videoBuffer} onChange={(value) => update('videoBuffer', value)} suffix="ms" /></div>
+        <div className="field-grid"><Field label="Bit rate" value={config.videoBitRate} disabled={!config.videoEnabled} onChange={(value) => update('videoBitRate', value)} hint="Supports K and M suffixes" />
+          <Field label="Video buffer" value={config.videoBuffer} disabled={!config.videoEnabled} onChange={(value) => update('videoBuffer', value)} suffix="ms" /></div>
       </SectionCard>
       <SectionCard title="Frame geometry" kicker="CANVAS" icon={<Box size={18} />}>
-        <div className="field-grid"><Field label="Maximum size" value={config.maxSize} onChange={(value) => update('maxSize', value)} suffix="px" />
-          <Field label="Maximum FPS" value={config.maxFps} onChange={(value) => update('maxFps', value)} suffix="fps" /></div>
-        <div className="value-shortcuts">{fpsShortcuts.map((fps) => <button className={config.maxFps === String(fps) ? 'active' : ''} key={fps} onClick={() => update('maxFps', String(fps))}>{fps} FPS</button>)}</div>
-        <Field label="Crop" value={config.crop} onChange={(value) => update('crop', value)} placeholder="width:height:x:y" hint="Uses the device's natural orientation" />
+        <div className="field-grid"><Field label="Maximum size" value={config.maxSize} disabled={!config.videoEnabled} onChange={(value) => update('maxSize', value)} suffix="px" />
+          <Field label="Maximum FPS" value={config.maxFps} disabled={!config.videoEnabled} onChange={(value) => update('maxFps', value)} suffix="fps" /></div>
+        <div className="value-shortcuts">{fpsShortcuts.map((fps) => <button disabled={!config.videoEnabled} className={config.maxFps === String(fps) ? 'active' : ''} key={fps} onClick={() => update('maxFps', String(fps))}>{fps} FPS</button>)}</div>
+        <Field label="Crop" value={config.crop} disabled={!config.videoEnabled} onChange={(value) => update('crop', value)} placeholder="width:height:x:y" hint="Uses the device's natural orientation" />
       </SectionCard>
       <VisualSummary config={config} />
     </div>
   </PageFrame>
 }
 
-function AudioPage({ config, update, capabilities }: PageBaseProps & { capabilities: DeviceCapabilities | null }) {
+function AudioPage({ config, update, setConfig, capabilities }: PageBaseProps & { capabilities: DeviceCapabilities | null }) {
   const unavailable = capabilities?.audio.forwardingSupported === false
   const reportedCodecs = capabilities?.audio.codecs || []
   return <PageFrame title="Audio room" subtitle="Route Android playback, microphones, and voice sources." icon={<AudioLines />}>
@@ -578,7 +693,7 @@ function AudioPage({ config, update, capabilities }: PageBaseProps & { capabilit
       <SectionCard title="Audio capture" kicker="SIGNAL" icon={<Mic2 size={18} />}>
         <Switch label="Forward audio" description={capabilities?.audio.supportMessage || 'Requires Android 11 or newer for device audio.'} checked={unavailable ? false : config.audioEnabled} disabled={unavailable} onChange={(value) => update('audioEnabled', value)} />
         {unavailable && <div className="inline-warning"><Info size={14} />Audio forwarding is unavailable on this Android version.</div>}
-        <Select label="Source" value={config.audioSource} disabled={!config.audioEnabled} onChange={(value) => update('audioSource', value)} options={[
+        <Select label="Source" value={config.audioSource} disabled={!config.audioEnabled} onChange={(value) => setConfig((current) => ({ ...current, audioSource: value, audioDup: value === 'playback' ? current.audioDup : false }))} options={[
           ['output', 'Device output'], ['playback', 'Playback (keep local optional)'], ['mic', 'Microphone'], ['mic-unprocessed', 'Microphone · unprocessed'],
           ['mic-camcorder', 'Microphone · camcorder'], ['mic-voice-recognition', 'Voice recognition'], ['mic-voice-communication', 'Voice communication'],
           ['voice-call', 'Voice call'], ['voice-call-uplink', 'Voice call · uplink'], ['voice-call-downlink', 'Voice call · downlink'], ['voice-performance', 'Live performance'],
@@ -662,10 +777,10 @@ function RecordingPage({ config, update }: PageBaseProps) {
     const file = await api.chooseRecordingPath(config.recordFormat)
     if (file) update('recordPath', file)
   }
-  return <PageFrame title="Recording booth" subtitle="Capture the stream without sacrificing Scrcpy's native responsiveness." icon={<Record />}>
+  return <PageFrame title="Recording booth" subtitle="Capture the mirrored session without sacrificing Scrcpy's native responsiveness." icon={<Record />}>
     <div className="settings-grid">
       <SectionCard title="Record session" kicker="OUTPUT" icon={<Record size={18} />}>
-        <Switch label="Enable recording" description="The recording begins and ends with the mirror session." checked={config.recordingEnabled} onChange={(value) => update('recordingEnabled', value)} />
+        <Switch label="Enable recording" description="The recording begins and ends with the mirroring session." checked={config.recordingEnabled} onChange={(value) => update('recordingEnabled', value)} />
         <Select label="Container" value={config.recordFormat} disabled={!config.recordingEnabled} onChange={(value) => update('recordFormat', value as StudioConfig['recordFormat'])}
           options={[['mp4', 'MP4 · video + audio'], ['mkv', 'MKV · video + audio'], ['m4a', 'M4A · audio'], ['mka', 'MKA · audio'], ['opus', 'Opus'], ['aac', 'AAC'], ['flac', 'FLAC'], ['wav', 'WAV']]} />
         <label className="field"><span>Destination</span><div className="path-field"><input value={config.recordPath} disabled={!config.recordingEnabled} onChange={(event) => update('recordPath', event.target.value)} placeholder="Choose a local file…" /><button onClick={choosePath} disabled={!config.recordingEnabled}>Browse</button></div></label>
@@ -677,7 +792,7 @@ function RecordingPage({ config, update }: PageBaseProps) {
       <SectionCard title="Capture recipe" kicker="SUMMARY" icon={<Clipboard size={18} />} className="recipe-card">
         <div className="recipe-art"><span className={config.recordingEnabled ? 'armed' : ''}><Record /></span><i /></div>
         <h3>{config.recordingEnabled ? 'Recording armed' : 'Recording is off'}</h3>
-        <p>{config.recordingEnabled ? `${config.recordFormat.toUpperCase()} · ${config.videoCodec.toUpperCase()} · ${config.audioEnabled ? config.audioCodec.toUpperCase() : 'No audio'}` : 'Enable recording and choose a destination to arm this session.'}</p>
+        <p>{config.recordingEnabled ? `${config.recordFormat.toUpperCase()} · ${config.videoEnabled ? config.videoCodec.toUpperCase() : 'No video'} · ${config.audioEnabled ? config.audioCodec.toUpperCase() : 'No audio'}` : 'Enable recording and choose a destination to arm this session.'}</p>
       </SectionCard>
     </div>
   </PageFrame>
@@ -696,7 +811,13 @@ function OptionsPage({ options, config, setConfig, search, onSearch, category, o
   function setExtra(option: CliOption, value: boolean | string) {
     setConfig((current) => {
       const guided = applyGuidedOptionValue(current, option.name, value)
-      return guided || { ...current, extras: { ...current.extras, [option.name]: value } }
+      if (guided) return guided
+      const extras = { ...current.extras }
+      if ((value === true || (typeof value === 'string' && value.trim())) && ['--select-usb', '--select-tcpip', '--tcpip'].includes(option.name)) {
+        for (const selector of ['--select-usb', '--select-tcpip', '--tcpip']) delete extras[selector]
+      }
+      extras[option.name] = value
+      return { ...current, extras }
     })
   }
   return <PageFrame title="Every command" subtitle="The complete Scrcpy option surface, refreshed from your installed runtime." icon={<Command />} badge={`${options.length} FLAGS`}>
@@ -718,7 +839,7 @@ function OptionsPage({ options, config, setConfig, search, onSearch, category, o
           <div className="option-editor">
             {oneShot ? <button className="run-action" disabled={unavailable || !config.serial} onClick={async () => { const result = await api.runScrcpyAction([`--serial=${config.serial}`, option.name]).catch((error) => ({ code: 1, output: error.message })); addLog(result.code === 0 ? 'success' : 'error', result.output) }}><Play size={14} />Run</button>
             : option.kind === 'boolean' ? <Switch label="" checked={current === true} disabled={unavailable} onChange={(value) => setExtra(option, value)} />
-              : <><input disabled={unavailable} value={typeof current === 'string' ? current : ''} onChange={(event) => setExtra(option, event.target.value)} placeholder={option.valueHint || 'value'} /><button disabled={unavailable} className={enabled ? 'active' : ''} onClick={() => setExtra(option, enabled ? '' : option.valueHint === 'value' ? '1' : option.valueHint || 'value')}><Plus size={15} /></button></>}
+              : <><input disabled={unavailable} value={typeof current === 'string' ? current : ''} onChange={(event) => setExtra(option, event.target.value)} placeholder={option.valueHint || 'value'} /><button disabled={unavailable} className={enabled ? 'active' : ''} aria-label={enabled ? `Clear ${option.name}` : option.optionalValue ? `Enable ${option.name} without a value` : `Focus ${option.name}`} title={enabled ? 'Clear value' : option.optionalValue ? 'Enable without a value' : 'Enter a value'} onClick={(event) => { if (enabled) setExtra(option, ''); else if (option.optionalValue) setExtra(option, true); else (event.currentTarget.previousElementSibling as HTMLInputElement | null)?.focus() }}>{enabled ? <X size={15} /> : <Plus size={15} />}</button></>}
           </div>
         </div>
       })}
@@ -729,12 +850,12 @@ function OptionsPage({ options, config, setConfig, search, onSearch, category, o
 
 function ProfilesPage({ profiles, config, onSave, onLoad, onRename, onDelete }: { profiles: SavedProfile[]; config: StudioConfig; onSave(): void; onLoad(profile: SavedProfile): void; onRename(id: string, name: string): void; onDelete(id: string): void }) {
   return <PageFrame title="Profiles" subtitle="Save a complete control-room setup and recall it in one click." icon={<Save />}>
-    <div className="profile-hero"><div><span className="kicker">CURRENT MIX</span><h2>{config.videoCodec.toUpperCase()} · {config.maxFps} FPS · {config.videoBitRate}</h2><p>{Object.values(config.extras).filter(Boolean).length} advanced flags in this configuration.</p></div><button className="primary" onClick={onSave}><Save size={17} />Save as new profile</button></div>
+    <div className="profile-hero"><div><span className="kicker">CURRENT MIX</span><h2>{config.videoEnabled ? `${config.videoCodec.toUpperCase()} · ${config.maxFps} FPS · ${config.videoBitRate}` : `AUDIO ONLY · ${config.audioCodec.toUpperCase()}`}</h2><p>{Object.values(config.extras).filter(Boolean).length} advanced flags in this configuration.</p></div><button className="primary" onClick={onSave}><Save size={17} />Save as new profile</button></div>
     {profiles.length ? <div className="profile-grid">{profiles.map((profile, index) => <article className="profile-card" key={profile.id}>
       <div className={`profile-art art-${index % 4}`}><CatMark /><span>{profile.config.maxFps}</span></div>
       <div className="profile-body"><span className="option-category">PROFILE {String(index + 1).padStart(2, '0')}</span><h3>{profile.name}</h3><p>{profile.description}</p><small>Updated {new Date(profile.updatedAt).toLocaleDateString()}</small></div>
-      <div className="profile-actions"><button onClick={() => onLoad(profile)}><Play size={14} />Load</button><button className="secondary profile-rename" onClick={() => { const name = window.prompt('Profile name', profile.name)?.trim(); if (name) onRename(profile.id, name) }}>Rename</button><button className="icon-button tiny" onClick={() => onDelete(profile.id)}><Trash2 size={14} /></button></div>
-    </article>)}</div> : <div className="empty-profiles"><CatMark /><h2>Your presets will live here</h2><p>Tune the studio, then save the complete setup—including advanced flags and recording preferences.</p><button className="primary" onClick={onSave}><Plus size={17} />Save first profile</button></div>}
+      <div className="profile-actions"><button onClick={() => onLoad(profile)}><Play size={14} />Load</button><button className="secondary profile-rename" onClick={() => { const name = window.prompt('Profile name', profile.name); if (name !== null) onRename(profile.id, name) }}>Rename</button><button className="icon-button tiny" aria-label={`Delete ${profile.name}`} title="Delete profile" onClick={() => { if (window.confirm(`Delete “${profile.name}”? This cannot be undone.`)) onDelete(profile.id) }}><Trash2 size={14} /></button></div>
+    </article>)}</div> : <div className="empty-profiles"><CatMark /><h2>Your presets will be saved here</h2><p>Tune the studio, then save the complete setup—including advanced flags and recording preferences.</p><button className="primary" onClick={onSave}><Plus size={17} />Save first profile</button></div>}
   </PageFrame>
 }
 
@@ -752,8 +873,8 @@ function AppearancePage({ theme, setTheme, onReset }: { theme: ThemeSettings; se
         <Switch label="Subtle background pattern" checked={theme.pattern} onChange={(value) => set('pattern', value)} />
         <button className="full secondary" onClick={onReset}><RotateCw size={16} />Restore default theme</button>
       </SectionCard>
-      <SectionCard title="Live preview" kicker="INTERFACE" icon={theme.mode === 'dark' ? <MoonStar size={18} /> : <Sun size={18} />} className="theme-preview-card">
-        <div className="theme-swatch-preview"><div className="preview-banner"><CatMark /><span>Pepperon's GUI</span></div><div className="preview-controls"><i /><i /><button>Go live</button></div><div className="preview-lines"><span /><span /><span /></div></div>
+      <SectionCard title="Interactive preview" kicker="INTERFACE" icon={theme.mode === 'dark' ? <MoonStar size={18} /> : <Sun size={18} />} className="theme-preview-card">
+        <div className="theme-swatch-preview"><div className="preview-banner"><CatMark /><span>Pepperon's GUI</span></div><div className="preview-controls"><i /><i /><button>Start Mirroring</button></div><div className="preview-lines"><span /><span /><span /></div></div>
       </SectionCard>
     </div>
   </PageFrame>
@@ -815,8 +936,8 @@ function Switch({ label, description, checked, onChange, disabled = false }: { l
   return <label className={`switch-row ${disabled ? 'disabled' : ''}`}><span className="switch-copy">{label && <strong>{label}</strong>}{description && <small>{description}</small>}</span><input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} /><i><b /></i></label>
 }
 
-function Segmented({ value, options, onChange }: { value: string; options: Array<[string, string]>; onChange(value: string): void }) {
-  return <div className="segmented">{options.map(([optionValue, label]) => <button className={value === optionValue ? 'active' : ''} key={optionValue} onClick={() => onChange(optionValue)}>{label}</button>)}</div>
+function Segmented({ value, options, onChange, disabled = false }: { value: string; options: Array<[string, string]>; onChange(value: string): void; disabled?: boolean }) {
+  return <div className="segmented">{options.map(([optionValue, label]) => <button disabled={disabled} className={value === optionValue ? 'active' : ''} key={optionValue} onClick={() => onChange(optionValue)}>{label}</button>)}</div>
 }
 
 function ModeSelect({ icon, label, value, options, onChange, disabled = false }: { icon: ReactNode; label: string; value: string; options: string[]; onChange(value: string): void; disabled?: boolean }) {
@@ -833,7 +954,7 @@ function EmptyState({ icon, title, text }: { icon: ReactNode; title: string; tex
 
 function ActivityFeed({ logs }: { logs: LogEntry[] }) {
   const recent = logs.slice(-5).reverse()
-  return <SectionCard title="Activity" kicker="LIVE LOG" icon={<Activity size={18} />} className="activity-card" action={<span className="live-indicator"><i /> listening</span>}>
+  return <SectionCard title="Activity" kicker="SESSION LOG" icon={<Activity size={18} />} className="activity-card" action={<span className="live-indicator"><i /> listening</span>}>
     <div className="activity-list">{recent.map((log) => <div className={`activity-entry ${log.level}`} key={log.id}><span>{log.level === 'error' ? <X /> : log.level === 'command' ? <Terminal /> : <Check />}</span><div><small>{log.time}</small><p>{log.text}</p></div></div>)}</div>
   </SectionCard>
 }
@@ -845,7 +966,7 @@ function SessionButton({ session, disabled, onClick, className = '' }: {
   const active = session.running || busy
   return <button type="button" className={`primary session-button ${active ? 'stop' : ''} ${className}`} onClick={onClick} disabled={disabled || session.status === 'stopping'}>
     {active ? <Square size={15} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-    {session.status === 'live' ? 'Stop Stream' : busy ? session.status.toUpperCase() : 'Go live'}
+    {session.status === 'live' ? 'Stop Mirroring' : busy ? session.status.toUpperCase() : 'Start Mirroring'}
   </button>
 }
 
@@ -853,7 +974,7 @@ function ConnectionVisual({ device, session, action }: { device?: Device; sessio
   const connected = device?.state === 'device'
   const syncing = ['starting', 'applying', 'restarting', 'reconnecting'].includes(session.status)
   const visualState = session.status === 'live' ? 'live' : syncing ? 'syncing' : session.status === 'error' ? 'error' : connected ? 'connected' : 'offline'
-  const stateLabel = visualState === 'live' ? 'Mirroring live' : visualState === 'syncing' ? 'Establishing link' : visualState === 'error' ? 'Link interrupted' : connected ? 'Device connected' : 'Waiting for device'
+  const stateLabel = visualState === 'live' ? 'Mirroring active' : visualState === 'syncing' ? 'Establishing link' : visualState === 'error' ? 'Link interrupted' : connected ? 'Device connected' : 'Waiting for device'
   const detail = connected ? `${device?.model || 'Android'} · ${device?.connection || 'ADB'}` : 'Connect by USB or Wi-Fi ADB'
   return <SectionCard title="Device link" kicker="CONNECTION" icon={device?.connection === 'Wi-Fi' ? <Wifi size={18} /> : <Usb size={18} />} className={`connection-visual-card visual-${visualState}`}>
     <div className="connection-stage">
@@ -873,7 +994,7 @@ function ConnectionVisual({ device, session, action }: { device?: Device; sessio
 function VisualSummary({ config }: { config: StudioConfig }) {
   return <SectionCard title="Signal preview" kicker="OUTPUT" icon={<Sparkles size={18} />} className="signal-preview-card">
     <div className="signal-art"><div className="pixel-grid" /><div className="signal-phone"><CatMark /></div><div className="signal-rays" /></div>
-    <div className="summary-badges"><span>{config.maxSize}px</span><span>{config.maxFps} fps</span><span>{config.videoCodec.toUpperCase()}</span><span>{config.videoBitRate}</span></div>
+    <div className="summary-badges">{config.videoEnabled ? <><span>{config.maxSize}px</span><span>{config.maxFps} fps</span><span>{config.videoCodec.toUpperCase()}</span><span>{config.videoBitRate}</span></> : <><span>VIDEO OFF</span><span>AUDIO ONLY</span><span>{config.audioCodec.toUpperCase()}</span></>}</div>
   </SectionCard>
 }
 

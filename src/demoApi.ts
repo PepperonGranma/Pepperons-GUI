@@ -37,6 +37,7 @@ export const demoApi: StudioApi = {
   async stop() { state = { running: false, status: 'offline' }; stateListener?.(state); return state },
   async retry() { return state },
   async getSessionState() { return state },
+  async validateArgs(args) { return { valid: true, args } },
   async reportDevicePresence() { return state },
   async runScrcpyAction() { return { code: 1, output: 'Scrcpy actions require the desktop app.' } },
   async adbAction() { return { code: 1, output: 'ADB actions require the desktop app.' } },

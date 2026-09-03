@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('scrcpyStudio', {
   stop: () => ipcRenderer.invoke('scrcpy:stop'),
   retry: () => ipcRenderer.invoke('scrcpy:retry'),
   getSessionState: () => ipcRenderer.invoke('scrcpy:state'),
+  validateArgs: (args) => ipcRenderer.invoke('scrcpy:validate-args', args),
   reportDevicePresence: (serial, present) => ipcRenderer.invoke('scrcpy:device-presence', serial, present),
   runScrcpyAction: (args) => ipcRenderer.invoke('scrcpy:run-once', args),
   adbAction: (action, payload) => ipcRenderer.invoke('adb:action', action, payload),

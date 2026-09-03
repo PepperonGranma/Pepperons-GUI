@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { ArrowRight, AudioLines, Command, Download, Gamepad2, Github, Info, Monitor, Play, Save, Usb, Video, type LucideIcon } from 'lucide-react'
+import { ArrowRight, AudioLines, Command, Download, Gamepad2, Github, Info, Monitor, Play, Save, Sparkles, Usb, Video, type LucideIcon } from 'lucide-react'
 import type { NavId } from './types'
 
 type GuideLink = { page: NavId; label: string }
@@ -22,13 +22,13 @@ const steps: GuideStep[] = [
     links: [{ page: 'video', label: 'Open Video' }],
   },
   {
-    title: 'Go live, then stop', icon: Play,
-    body: <>Press <strong>Go live</strong> in the Studio header or Device Link card. The <strong>LIVE</strong> state and a process PID confirm the session is running. Press <strong>Stop Stream</strong> in either place to end it.</>,
+    title: 'Start mirroring, then stop', icon: Play,
+    body: <>Press <strong>Start Mirroring</strong> in the Studio header or Device Link card. The <strong>MIRRORING</strong> state and a process PID confirm the session is running. Press <strong>Stop Mirroring</strong> in either place to end it.</>,
     links: [{ page: 'studio', label: 'Go to session controls' }],
   },
   {
     title: 'Add audio or a recording', icon: AudioLines,
-    body: <>Use Audio to choose a supported source. To save a file, turn on <strong>Enable recording</strong>, select a <strong>Container</strong>, and use <strong>Browse</strong> to set a Destination before going live. A destination is required; the toggle alone does not save a recording.</>,
+    body: <>Use Audio to choose a supported source. To save a file, turn on <strong>Enable recording</strong>, select a <strong>Container</strong>, and use <strong>Browse</strong> to set a Destination before starting mirroring. A destination is required; the toggle alone does not save a recording.</>,
     links: [{ page: 'audio', label: 'Open Audio' }, { page: 'recording', label: 'Open Recording' }],
   },
   {
@@ -44,7 +44,7 @@ const moreControls: Array<GuideLink & { icon: LucideIcon; detail: string }> = [
   { page: 'options', label: 'All commands', icon: Command, detail: 'Search the complete option list with CTRL + K.' },
 ]
 
-export function QuickStarterGuide({ onNavigate }: { onNavigate(page: NavId): void }) {
+export function QuickStarterGuide({ onNavigate, onStartTour }: { onNavigate(page: NavId): void; onStartTour(): void }) {
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => {
     heading.current?.closest('.main-content')?.scrollTo({ top: 0 })
@@ -60,7 +60,13 @@ export function QuickStarterGuide({ onNavigate }: { onNavigate(page: NavId): voi
       <div><span className="kicker">GETTING STARTED</span><h1 id="starter-guide-title" ref={heading} tabIndex={-1}>Quick Starter Guide</h1><p>Your first session in Pepperon’s GUI, one step at a time.</p></div>
     </header>
 
-    <aside className="guide-callout"><Info size={19} aria-hidden="true" /><p><strong>Go live means local mirroring.</strong> It opens Scrcpy on your PC—it does not broadcast to Twitch or another online service. Guide shortcuts only open pages; they never start a session or change settings.</p></aside>
+    <section className="guide-tour-banner">
+      <div className="guide-tour-orbit" aria-hidden="true"><span /><Sparkles /></div>
+      <div><span className="kicker">THE FUN-SIZE VERSION</span><h2>Want the grand tour?</h2><p>Five animated stops. Zero command-line homework.</p></div>
+      <button type="button" data-start-feature-tour onClick={onStartTour}><Play size={15} />Play feature tour</button>
+    </section>
+
+    <aside className="guide-callout"><Info size={19} aria-hidden="true" /><p><strong>Mirroring stays local.</strong> Start Mirroring opens Scrcpy on this PC. Guide shortcuts only open pages; they never start a session or change settings.</p></aside>
 
     <ol className="guide-steps">
       {steps.map(({ title, icon: Icon, body, links }, index) => <li className="guide-step" key={title}>
@@ -73,14 +79,14 @@ export function QuickStarterGuide({ onNavigate }: { onNavigate(page: NavId): voi
     <section className="guide-more" aria-labelledby="guide-more-title">
       <h2 id="guide-more-title">A little more control</h2>
       <div className="guide-shortcuts">{moreControls.map(({ page, label, icon: Icon, detail }) => <button type="button" key={page} data-guide-destination={page} onClick={() => navigate(page)}><Icon size={19} aria-hidden="true" /><span><strong>{label}</strong><small>{detail}</small></span><ArrowRight size={15} aria-hidden="true" /></button>)}</div>
-      <p className="guide-apply-note"><Info size={14} aria-hidden="true" />Settings apply automatically. Some changes restart the session; eligible live controls apply directly. During recording, a restart creates a new recording segment.</p>
+      <p className="guide-apply-note"><Info size={14} aria-hidden="true" />Settings apply automatically. Some changes restart the session; eligible in-session controls apply directly. During recording, a restart creates a new recording segment.</p>
     </section>
 
     <section className="guide-help" aria-labelledby="guide-help-title">
       <h2 id="guide-help-title">If something gets stuck</h2>
       <details><summary>No device appears, or it says unauthorized</summary><p>Unlock your phone and check for the USB debugging approval prompt. Confirm the cable supports data, then use the refresh button on Studio’s Connected device card. Only select a device you recognize.</p></details>
       <details><summary>I want to connect over Wi-Fi</summary><p>Put the PC and phone on the same trusted network. For wireless debugging pairing, enter the phone’s pairing IP:port and pairing code in Studio’s ADB Connection card, then choose Pair. Replace the address with the phone’s connection IP:port and choose Connect—the pairing and connection ports can differ.</p></details>
-      <details><summary>Go live is disabled, or the session fails</summary><p>Go live needs an installed runtime and an authorized device. In Video, make sure Capture source is the source you intend to use. Check Studio’s Activity log for the actual error, then review the selected codec, encoder, or recording destination before retrying.</p></details>
+      <details><summary>Start Mirroring is disabled, or the session fails</summary><p>Start Mirroring needs an installed runtime and an authorized device. In Video, make sure Capture source is the source you intend to use. Check Studio’s Activity log for the actual error, then review the selected codec, encoder, or recording destination before retrying.</p></details>
     </section>
   </article>
 }

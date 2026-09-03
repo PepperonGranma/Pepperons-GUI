@@ -2,6 +2,7 @@ import type { CliOption, StudioConfig, ThemeSettings } from './types'
 
 export const DEFAULT_CONFIG: StudioConfig = {
   serial: '',
+  videoEnabled: true,
   videoSource: 'display',
   videoCodec: 'h264',
   videoEncoder: '',
@@ -97,7 +98,7 @@ const DESCRIPTIONS: Record<string, string> = {
   '--keyboard': 'Select SDK, UHID, AOA, or disabled keyboard injection.',
   '--mouse': 'Select SDK, UHID, AOA, or disabled mouse injection.',
   '--new-display': 'Create and mirror a new Android virtual display.',
-  '--record': 'Record the mirrored stream to a local media file.',
+  '--record': 'Record the mirrored session to a local media file.',
   '--start-app': 'Start an Android app by package name or friendly name.',
   '--ignore-video-encoder-constraints': 'Ignore reported encoder size constraints (added in v4.1).',
 }
@@ -116,17 +117,20 @@ export function categoryFor(name: string) {
 
 const OPTION_NAMES = `--always-on-top --angle --audio-bit-rate --audio-buffer --audio-codec --audio-codec-options --audio-dup --audio-encoder --audio-output-buffer --audio-source --background-color --camera-ar --camera-facing --camera-fps --camera-high-speed --camera-id --camera-size --camera-torch --camera-zoom --capture-orientation --crop --disable-screensaver --display-id --display-ime-policy --display-orientation --flex-display --force-adb-forward --fullscreen --gamepad --ignore-video-encoder-constraints --keep-active --keyboard --kill-adb-on-close --legacy-paste --list-apps --list-camera-sizes --list-cameras --list-displays --list-encoders --max-fps --max-size --min-size-alignment --mouse --mouse-bind --new-display --no-audio --no-audio-playback --no-cleanup --no-clipboard-autosync --no-control --no-downsize-on-error --no-key-repeat --no-mipmaps --no-mouse-hover --no-playback --no-power-on --no-terminal-title --no-vd-destroy-content --no-vd-system-decorations --no-video --no-video-playback --no-window --no-window-aspect-ratio-lock --orientation --otg --pause-on-exit --port --power-off-on-close --prefer-text --print-fps --push-target --raw-key-events --record --record-format --record-orientation --render-driver --render-fit --require-audio --screen-off-timeout --select-tcpip --select-usb --serial --shortcut-mod --show-touches --start-app --stay-awake --tcpip --time-limit --tunnel-host --tunnel-port --turn-screen-off --v4l2-buffer --v4l2-sink --verbosity --video-bit-rate --video-buffer --video-codec --video-codec-options --video-encoder --video-source --window-borderless --window-height --window-title --window-width --window-x --window-y`
 
+const OPTIONAL_VALUE_OPTIONS = new Set(['--new-display', '--pause-on-exit', '--tcpip'])
+
 export const FALLBACK_OPTIONS: CliOption[] = OPTION_NAMES.split(' ').map((name) => ({
   name,
   short: '',
   valueHint: VALUE_HINTS[name] || '',
   kind: VALUE_HINTS[name] ? 'value' : 'boolean',
+  optionalValue: OPTIONAL_VALUE_OPTIONS.has(name),
   category: categoryFor(name),
   description: DESCRIPTIONS[name] || `Pass ${name} directly to Scrcpy.`,
 }))
 
 const handledOptions = new Set([
-  '--serial', '--video-source', '--video-codec', '--video-encoder', '--video-bit-rate', '--max-size', '--max-fps', '--video-buffer', '--crop',
+  '--serial', '--no-video', '--video-source', '--video-codec', '--video-encoder', '--video-bit-rate', '--max-size', '--max-fps', '--video-buffer', '--crop',
   '--no-audio', '--audio-codec', '--audio-source', '--audio-bit-rate', '--audio-buffer', '--audio-dup', '--no-control',
   '--audio-encoder', '--keyboard', '--mouse', '--gamepad', '--no-clipboard-autosync', '--show-touches', '--stay-awake', '--turn-screen-off',
   '--power-off-on-close', '--window-title', '--window-width', '--window-height', '--window-x', '--window-y', '--always-on-top', '--window-borderless', '--fullscreen', '--disable-screensaver',
@@ -134,20 +138,30 @@ const handledOptions = new Set([
   '--camera-torch', '--display-id', '--display-orientation', '--new-display', '--no-vd-destroy-content', '--no-vd-system-decorations',
 ])
 
+export function isGuidedOption(name: string) {
+  return handledOptions.has(name)
+}
+
 export function buildArgs(config: StudioConfig): string[] {
   const args: string[] = []
   const value = (name: string, next: string) => { if (next.trim()) args.push(`${name}=${next.trim()}`) }
   const flag = (name: string, enabled: boolean) => { if (enabled) args.push(name) }
 
-  value('--serial', config.serial)
-  value('--video-source', config.videoSource)
-  value('--video-codec', config.videoCodec)
-  value('--video-encoder', config.videoEncoder)
-  value('--video-bit-rate', config.videoBitRate)
-  value('--max-size', config.maxSize)
-  value('--max-fps', config.maxFps)
-  if (config.videoBuffer !== '0') value('--video-buffer', config.videoBuffer)
-  value('--crop', config.crop)
+  const selectorOverride = config.extras['--select-usb'] === true
+    || config.extras['--select-tcpip'] === true
+    || (typeof config.extras['--tcpip'] === 'string' && Boolean(config.extras['--tcpip'].trim()))
+  if (!selectorOverride) value('--serial', config.serial)
+  if (!config.videoEnabled) flag('--no-video', true)
+  else {
+    value('--video-source', config.videoSource)
+    value('--video-codec', config.videoCodec)
+    value('--video-encoder', config.videoEncoder)
+    value('--video-bit-rate', config.videoBitRate)
+    value('--max-size', config.maxSize)
+    value('--max-fps', config.maxFps)
+    if (config.videoBuffer !== '0') value('--video-buffer', config.videoBuffer)
+    value('--crop', config.crop)
+  }
 
   if (!config.audioEnabled) flag('--no-audio', true)
   else {
@@ -188,7 +202,7 @@ export function buildArgs(config: StudioConfig): string[] {
   flag('--no-playback', config.noPlayback)
   value('--time-limit', config.timeLimit)
 
-  if (config.videoSource === 'camera') {
+  if (config.videoEnabled && config.videoSource === 'camera') {
     value('--camera-id', config.cameraId)
     value('--camera-facing', config.cameraFacing)
     value('--camera-size', config.cameraSize)
@@ -196,9 +210,14 @@ export function buildArgs(config: StudioConfig): string[] {
     flag('--camera-torch', config.cameraTorch)
   }
 
-  if (config.newDisplay) {
-    const display = [config.newDisplaySize, config.newDisplayDpi].filter(Boolean).join('/')
-    value('--new-display', display)
+  if (!config.videoEnabled) {
+    // Display selection and virtual-display flags only affect video capture.
+  } else if (config.newDisplay) {
+    const display = config.newDisplaySize
+      ? `${config.newDisplaySize}${config.newDisplayDpi ? `/${config.newDisplayDpi}` : ''}`
+      : config.newDisplayDpi ? `/${config.newDisplayDpi}` : ''
+    if (display) value('--new-display', display)
+    else flag('--new-display', true)
     flag('--no-vd-destroy-content', !config.destroyDisplayContent)
     flag('--no-vd-system-decorations', !config.displayDecorations)
   } else {
@@ -216,7 +235,7 @@ export function buildArgs(config: StudioConfig): string[] {
 
 export function getGuidedOptionValue(config: StudioConfig, name: string): boolean | string | undefined {
   const values: Record<string, boolean | string> = {
-    '--serial': config.serial, '--video-source': config.videoSource, '--video-codec': config.videoCodec,
+    '--serial': config.serial, '--no-video': !config.videoEnabled, '--video-source': config.videoSource, '--video-codec': config.videoCodec,
     '--video-encoder': config.videoEncoder, '--video-bit-rate': config.videoBitRate, '--max-size': config.maxSize,
     '--max-fps': config.maxFps, '--video-buffer': config.videoBuffer, '--crop': config.crop,
     '--no-audio': !config.audioEnabled, '--audio-codec': config.audioCodec, '--audio-encoder': config.audioEncoder,
@@ -231,7 +250,9 @@ export function getGuidedOptionValue(config: StudioConfig, name: string): boolea
     '--no-playback': config.noPlayback, '--time-limit': config.timeLimit, '--camera-id': config.cameraId,
     '--camera-facing': config.cameraFacing, '--camera-size': config.cameraSize, '--camera-fps': config.cameraFps,
     '--camera-torch': config.cameraTorch, '--display-id': config.displayId, '--display-orientation': config.displayOrientation,
-    '--new-display': config.newDisplay ? [config.newDisplaySize, config.newDisplayDpi].filter(Boolean).join('/') : '',
+    '--new-display': config.newDisplay
+      ? config.newDisplaySize ? `${config.newDisplaySize}${config.newDisplayDpi ? `/${config.newDisplayDpi}` : ''}` : config.newDisplayDpi ? `/${config.newDisplayDpi}` : true
+      : '',
     '--no-vd-destroy-content': !config.destroyDisplayContent, '--no-vd-system-decorations': !config.displayDecorations,
   }
   return handledOptions.has(name) ? values[name] : undefined
@@ -243,6 +264,7 @@ export function applyGuidedOptionValue(config: StudioConfig, name: string, next:
   const patch: Partial<StudioConfig> = {}
   switch (name) {
     case '--serial': patch.serial = text; break
+    case '--no-video': patch.videoEnabled = !bool; break
     case '--video-source': patch.videoSource = text as StudioConfig['videoSource']; break
     case '--video-codec': patch.videoCodec = text as StudioConfig['videoCodec']; break
     case '--video-encoder': patch.videoEncoder = text; break
@@ -288,6 +310,7 @@ export function applyGuidedOptionValue(config: StudioConfig, name: string, next:
     case '--display-id': patch.displayId = text; break
     case '--display-orientation': patch.displayOrientation = text; break
     case '--new-display': {
+      if (next === true) { patch.newDisplay = true; patch.newDisplaySize = ''; patch.newDisplayDpi = ''; break }
       const [size, dpi = ''] = text.split('/')
       patch.newDisplay = Boolean(text); patch.newDisplaySize = size; patch.newDisplayDpi = dpi; break
     }
@@ -301,8 +324,8 @@ export function applyGuidedOptionValue(config: StudioConfig, name: string, next:
 export const LIVE_ADB_CONFIG_KEYS: Array<keyof StudioConfig> = ['showTouches', 'stayAwake', 'turnScreenOff']
 
 export const QUICK_PRESETS: Array<{ name: string; label: string; description: string; patch: Partial<StudioConfig> }> = [
-  { name: 'balanced', label: 'Balanced', description: '1080p · 60 fps · 8 Mbps', patch: { maxSize: '1920', maxFps: '60', videoBitRate: '8M', videoCodec: 'h264', videoBuffer: '0' } },
-  { name: 'quality', label: 'Studio', description: '1440p · 60 fps · 16 Mbps', patch: { maxSize: '2560', maxFps: '60', videoBitRate: '16M', videoCodec: 'h265', videoBuffer: '20' } },
-  { name: 'latency', label: 'Low latency', description: '720p · 90 fps · 6 Mbps', patch: { maxSize: '1280', maxFps: '90', videoBitRate: '6M', videoCodec: 'h264', videoBuffer: '0', audioBuffer: '20' } },
-  { name: 'wireless', label: 'Wireless', description: '720p · 45 fps · 4 Mbps', patch: { maxSize: '1280', maxFps: '45', videoBitRate: '4M', videoCodec: 'h264', videoBuffer: '50' } },
+  { name: 'balanced', label: 'Balanced', description: '1080p · 60 fps · 8 Mbps', patch: { videoEnabled: true, maxSize: '1920', maxFps: '60', videoBitRate: '8M', videoCodec: 'h264', videoBuffer: '0' } },
+  { name: 'quality', label: 'Studio', description: '1440p · 60 fps · 16 Mbps', patch: { videoEnabled: true, maxSize: '2560', maxFps: '60', videoBitRate: '16M', videoCodec: 'h265', videoBuffer: '20' } },
+  { name: 'latency', label: 'Low latency', description: '720p · 90 fps · 6 Mbps', patch: { videoEnabled: true, maxSize: '1280', maxFps: '90', videoBitRate: '6M', videoCodec: 'h264', videoBuffer: '0', audioBuffer: '20' } },
+  { name: 'wireless', label: 'Wireless', description: '720p · 45 fps · 4 Mbps', patch: { videoEnabled: true, maxSize: '1280', maxFps: '45', videoBitRate: '4M', videoCodec: 'h264', videoBuffer: '50' } },
 ]

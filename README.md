@@ -2,7 +2,7 @@
 
 > Your Android control room—minus the command-line scavenger hunt.
 
-Pepperon's GUI turns scrcpy's enormous toolbox into a responsive desktop studio. Plug in a phone, pick your setup, press **Go live**, and start mirroring without memorizing a wall of flags.
+Pepperon's GUI turns scrcpy's enormous toolbox into a responsive desktop studio. Plug in a phone, pick your setup, press **Start Mirroring**, and mirror without memorizing a wall of flags.
 
 ```text
 📱 Android device  →  🔌 ADB  →  🌶️ Pepperon's GUI  →  🖥️ scrcpy
@@ -11,7 +11,7 @@ Pepperon's GUI turns scrcpy's enormous toolbox into a responsive desktop studio.
 ## Why you might like it
 
 - 🎛️ **Tweak without flag spelunking** — guided controls for video, audio, input, displays, recording, and more
-- ⚡ **Change settings while you work** — eligible options apply live; startup-only changes restart cleanly
+- ⚡ **Change settings while you work** — eligible options apply during mirroring; startup-only changes restart cleanly
 - 🎨 **Make it yours** — full dark/light themes, custom accents, Highlight color, surfaces, density, radius, and patterns
 - 📡 **USB or wireless** — discover devices, pair ADB, enable TCP/IP, reconnect, and keep sessions moving
 - 🧰 **Nothing hidden** — search every option reported by the installed scrcpy runtime
@@ -39,7 +39,7 @@ Then connect an Android device with USB debugging enabled. The app finds scrcpy 
 
 On Windows, **Install Scrcpy** downloads the latest official package and verifies its GitHub-provided SHA-256 digest before unpacking it.
 
-> **Does “Go live” broadcast me to the internet?** Nope. It starts a local scrcpy mirroring session on your PC. No surprise Twitch debut.
+> **Does mirroring leave my PC?** Nope. Start Mirroring opens a local scrcpy session on your computer.
 
 ## Open the control-room doors
 

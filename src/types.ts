@@ -5,6 +5,7 @@ export interface CliOption {
   short?: string
   valueHint: string
   kind: 'boolean' | 'value'
+  optionalValue?: boolean
   category: string
   description: string
   runtimeAvailable?: boolean
@@ -157,6 +158,7 @@ export interface LogEntry {
 
 export interface StudioConfig {
   serial: string
+  videoEnabled: boolean
   videoSource: 'display' | 'camera'
   videoCodec: 'h264' | 'h265' | 'av1' | 'vp8' | 'vp9'
   videoEncoder: string
@@ -246,6 +248,7 @@ export interface StudioApi {
   stop(): Promise<SessionState>
   retry(): Promise<SessionState>
   getSessionState(): Promise<SessionState>
+  validateArgs(args: string[]): Promise<{ valid: true; args: string[] }>
   reportDevicePresence(serial: string, present: boolean): Promise<SessionState>
   runScrcpyAction(args: string[]): Promise<{ code: number; output: string }>
   adbAction(action: string, payload: Record<string, unknown>): Promise<{ code: number; output: string }>

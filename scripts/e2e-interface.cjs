@@ -54,6 +54,48 @@ async function main() {
     await delay(50)
   }
   const combo = (label) => `[role="combobox"][aria-label="${label}"]`
+  const onboardingKey = 'scrcpy-studio:onboarding-v1'
+  const checkFirstRunTour = async () => {
+    await send('Emulation.setDeviceMetricsOverride', {width:1280,height:844,deviceScaleFactor:1,mobile:false})
+    await evaluate(`localStorage.removeItem(${JSON.stringify(onboardingKey)}); location.reload()`)
+    await delay(150)
+    await wait(`Boolean(document.querySelector('.startup-loader .loader-cat'))`, 'Pepperon startup animation')
+    assert(await evaluate(`document.querySelector('.startup-loader').getAttribute('role') === 'status'`), 'Startup loader is not announced')
+    await wait(`!document.querySelector('.startup-loader')`, 'Startup animation completion')
+    await wait(`Boolean(document.querySelector('.first-run-tour [role="dialog"]'))`, 'First-run feature tour')
+    assert.equal(await evaluate(`document.querySelector('.first-run-tour [role="dialog"]').getAttribute('aria-modal')`), 'true')
+    assert.equal(await evaluate(`document.querySelectorAll('.tour-progress button').length`), 5)
+    assert.equal(await evaluate(`document.querySelector('#tour-title').textContent`), 'Meet your Android control room')
+    assert(await evaluate(`Boolean(document.querySelector('.tour-welcome-scene .tour-phone'))`), 'Welcome animation is missing')
+    const titles = [
+      'Plug in. Approve. High-five.',
+      'Tune the mirror before it leaves the phone',
+      'Your colors. Your corners. Your vibe.',
+      'Start mirroring—locally',
+    ]
+    for (const title of titles) {
+      await click('.tour-next')
+      await wait(`document.querySelector('#tour-title')?.textContent === ${JSON.stringify(title)}`, `Tour step: ${title}`)
+    }
+    assert(await evaluate(`document.querySelector('.tour-next').textContent.includes('Enter the control room')`))
+    await click('.tour-next')
+    await wait(`!document.querySelector('.first-run-tour')`, 'Tour completion')
+    assert.equal(await evaluate(`localStorage.getItem(${JSON.stringify(onboardingKey)})`), 'seen')
+    await evaluate('location.reload()')
+    await delay(150)
+    await wait(`!document.querySelector('.startup-loader')`, 'Reload startup animation completion')
+    assert(!(await evaluate(`Boolean(document.querySelector('.first-run-tour'))`)), 'Completed tour reopened after reload')
+    await nav('Studio')
+    await click('.sidebar-guide button')
+    await click('[data-start-feature-tour]')
+    await wait(`Boolean(document.querySelector('.first-run-tour'))`, 'Tour replay')
+    await send('Emulation.setDeviceMetricsOverride', {width:390,height:844,deviceScaleFactor:1,mobile:false})
+    await delay(150)
+    assert(await evaluate(`(() => { const r=document.querySelector('.tour-dialog').getBoundingClientRect(); return r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight && document.documentElement.scrollWidth<=innerWidth })()`), 'Tour overflows at 390px')
+    await key('Escape', 'Escape', 27)
+    await wait(`!document.querySelector('.first-run-tour')`, 'Escape closes replayed tour')
+    console.log('PASS first-run feature tour, persistence, replay and responsive layout')
+  }
   const checkGuide = async (width, exerciseLinks = false) => {
     if (await evaluate(`Boolean(document.querySelector('.starter-guide'))`)) await nav('Studio')
     if (width <= 920) {
@@ -72,7 +114,8 @@ async function main() {
     assert(await evaluate(`Boolean(document.querySelector('.sidebar-guide .lucide-github'))`), 'Requested guide icon is missing')
     assert.equal(await evaluate(`document.querySelectorAll('.guide-steps > li').length`), 6)
     assert.equal(await evaluate(`document.querySelectorAll('.guide-help details').length`), 3)
-    assert(await evaluate(`document.querySelector('.starter-guide').innerText.includes('Stop Stream')`))
+    assert(await evaluate(`Boolean(document.querySelector('[data-start-feature-tour]'))`), 'Feature-tour replay control is missing')
+    assert(await evaluate(`document.querySelector('.starter-guide').innerText.includes('Stop Mirroring')`))
     assert(await evaluate(`document.documentElement.scrollWidth<=innerWidth && [...document.querySelectorAll('.guide-step,.guide-shortcuts button')].every(e=>e.scrollWidth<=e.clientWidth)`), `Guide overflows at ${width}px`)
     if (width <= 920) assert(!(await evaluate(`document.querySelector('.sidebar').classList.contains('is-open')`)), 'Guide must close mobile navigation')
     await click('.guide-help summary')
@@ -113,14 +156,14 @@ async function main() {
     assert.equal(layout.overview.length, 7, 'Expected Device Link and six overview cards')
     assert(layout.scrollWidth <= width, `Dashboard overflows at ${width}px`)
     same(layout.stage.height, layout.linkContent.height, 'Artwork fills the tall card')
-    assert(layout.goLive.top >= layout.caption.bottom && layout.goLive.bottom < link.bottom, 'Go live sits below the device caption inside Device Link')
-    assert(layout.goLive.left >= link.left && layout.goLive.right <= link.right, 'Go live fits Device Link')
-    assert(layout.goLive.height <= 32 && layout.goLive.right - layout.goLive.left <= 160, 'Device Link Go live stays compact')
-    assert(layout.goLive.right - layout.goLive.left < (link.right - link.left) * .8, 'Device Link Go live must not be full-width')
+    assert(layout.goLive.top >= layout.caption.bottom && layout.goLive.bottom < link.bottom, 'Start Mirroring sits below the device caption inside Device Link')
+    assert(layout.goLive.left >= link.left && layout.goLive.right <= link.right, 'Start Mirroring fits Device Link')
+    assert(layout.goLive.height <= 32 && layout.goLive.right - layout.goLive.left <= 160, 'Device Link Start Mirroring stays compact')
+    assert(layout.goLive.right - layout.goLive.left < (link.right - link.left) * .8, 'Device Link Start Mirroring must not be full-width')
     assert(layout.decorativeBars.every(content => content === 'none' || content === 'normal'), 'Device Link decorative bars remain')
     const buttons = await evaluate(`[...document.querySelectorAll('.session-button')].map(button => ({label:button.textContent.trim(),disabled:button.disabled}))`)
     assert.equal(buttons.length, 2, 'Expected header and Device Link session buttons')
-    assert.equal(buttons[0].label, 'Go live', 'Idle session action is Go live')
+    assert.equal(buttons[0].label, 'Start Mirroring', 'Idle session action is Start Mirroring')
     assert.deepEqual(buttons[0], buttons[1], 'Both session buttons must share label and availability')
     if (width > 1180) {
       same(link.top, hardware.top, 'Device Link top aligns with row one')
@@ -174,6 +217,7 @@ async function main() {
       await wait(`getComputedStyle(document.querySelector('.app')).getPropertyValue('--pink').trim() === ${JSON.stringify(color)}`, 'Highlight color update')
       const styles = await evaluate(`({preview:getComputedStyle(document.querySelector('.preview-controls i')).backgroundColor,range:getComputedStyle(document.querySelector('.range-field input')).accentColor})`)
       await nav('Studio')
+      await click('.preset-compact button:first-child')
       Object.assign(styles, await evaluate(`({label:getComputedStyle(document.querySelector('.card-header .kicker')).color,preset:getComputedStyle(document.querySelector('.preset-compact .active')).backgroundColor,primary:getComputedStyle(document.querySelector('.connection-go-live')).backgroundColor})`))
       await nav('Video')
       await click(combo('Video codec'))
@@ -188,27 +232,31 @@ async function main() {
     console.log(`PASS ${mode} Highlight updates eight interface details independently of Primary Accent`)
   }
   if (process.argv.includes('--guide-only')) {
-    const original = await evaluate(`({config:localStorage.getItem('scrcpy-studio:config'),theme:localStorage.getItem('scrcpy-studio:theme')})`)
+    const original = await evaluate(`({config:localStorage.getItem('scrcpy-studio:config'),theme:localStorage.getItem('scrcpy-studio:theme'),onboarding:localStorage.getItem(${JSON.stringify(onboardingKey)})})`)
     try {
+      await checkFirstRunTour()
       for (const width of [1536, 1024, 390]) {
         await send('Emulation.setDeviceMetricsOverride', {width,height:844,deviceScaleFactor:1,mobile:false})
         await delay(150)
         await checkGuide(width, width === 1536)
       }
-      assert.deepEqual(await evaluate(`({config:localStorage.getItem('scrcpy-studio:config'),theme:localStorage.getItem('scrcpy-studio:theme')})`), original, 'Guide navigation must not change settings')
+      assert.deepEqual(await evaluate(`({config:localStorage.getItem('scrcpy-studio:config'),theme:localStorage.getItem('scrcpy-studio:theme'),onboarding:${JSON.stringify(original.onboarding)}})`), original, 'Guide navigation must not change settings')
       console.log('RESULT Starter Guide tests passed without changing session settings')
     } finally {
       await send('Emulation.clearDeviceMetricsOverride').catch(() => undefined)
+      await evaluate(`(() => { const value=${JSON.stringify(original.onboarding)}; value === null ? localStorage.removeItem(${JSON.stringify(onboardingKey)}) : localStorage.setItem(${JSON.stringify(onboardingKey)},value); location.reload() })()`).catch(() => undefined)
       socket.close()
     }
     return
   }
   if (await evaluate(`(async () => (await window.scrcpyStudio.getSessionState()).running)()`)) {
     socket.close()
-    throw new Error('Use Stop Stream before UI tests; the live session was left untouched')
+    throw new Error('Use Stop Mirroring before UI tests; the active session was left untouched')
   }
-  const saved = await evaluate(`({ theme: localStorage.getItem('scrcpy-studio:theme'), config: localStorage.getItem('scrcpy-studio:config') })`)
+  const saved = await evaluate(`({ theme: localStorage.getItem('scrcpy-studio:theme'), config: localStorage.getItem('scrcpy-studio:config'), onboarding: localStorage.getItem(${JSON.stringify(onboardingKey)}) })`)
   try {
+    await evaluate(`localStorage.setItem(${JSON.stringify(onboardingKey)},'seen'); document.querySelector('.tour-close')?.click()`)
+    await wait(`!document.querySelector('.startup-loader')`, 'Startup animation completion')
     await nav('Studio')
     assert.equal(await evaluate('document.title'), "Pepperon's GUI")
     assert.equal(await evaluate(`document.querySelector('.dashboard-header h1').textContent`), "Pepperon's GUI")
@@ -266,7 +314,27 @@ async function main() {
     await click(codec)
     await key('Tab', 'Tab', 9)
     assert(!(await evaluate(`Boolean(document.querySelector('[role="listbox"]'))`)))
-    console.log('PASS dropdown selection, disabled options, Escape, Tab and keyboard navigation')
+    assert(await evaluate(`(() => { const button=document.querySelector('.segmented button:nth-child(2)'); button.focus(); return document.activeElement===button })()`))
+    await key(' ', 'Space', 32)
+    assert.equal(await evaluate(`document.querySelector('.segmented button:nth-child(2)').classList.contains('active')`), true, 'Space did not activate a standard control')
+    assert(await evaluate(`(() => { const button=document.querySelector('.segmented button:nth-child(1)'); button.focus(); return document.activeElement===button })()`))
+    await key(' ', 'Space', 32)
+    assert.equal(await evaluate(`document.querySelector('.segmented button:nth-child(1)').classList.contains('active')`), true, 'Space did not restore a standard control')
+    await key('Tab', 'Tab', 9)
+    const forwardFocus = await evaluate(`document.activeElement?.outerHTML.slice(0,100)`)
+    await key('Tab', 'Tab', 9, 8)
+    const backwardFocus = await evaluate(`document.activeElement?.outerHTML.slice(0,100)`)
+    assert.notEqual(forwardFocus, backwardFocus, 'Shift+Tab did not move focus backward')
+    const focusStyle = await evaluate(`(() => { const style=getComputedStyle(document.activeElement); return {element:document.activeElement?.tagName,focusVisible:document.activeElement.matches(':focus-visible'),outlineStyle:style.outlineStyle,outlineWidth:style.outlineWidth,outlineColor:style.outlineColor} })()`)
+    console.log('FOCUS_STYLE', JSON.stringify(focusStyle))
+    assert(focusStyle.focusVisible && focusStyle.outlineStyle !== 'none' && parseFloat(focusStyle.outlineWidth) >= 1.5, 'Keyboard focus is not visibly outlined')
+    const focusTrail = []
+    for (let index = 0; index < 24; index++) {
+      await key('Tab', 'Tab', 9)
+      focusTrail.push(await evaluate(`document.activeElement?.tagName+':'+(document.activeElement?.getAttribute('aria-label')||document.activeElement?.textContent?.trim().slice(0,30)||'')`))
+    }
+    assert(new Set(focusTrail).size >= 8, 'Tab navigation appears trapped in too few controls')
+    console.log('PASS dropdown selection, disabled options, Escape, Tab, Shift+Tab, Enter/Space, visible focus and no keyboard trap')
 
     for (const mode of ['light', 'dark']) {
       await nav('Appearance')
@@ -297,7 +365,7 @@ async function main() {
     console.log('RESULT interface tests passed')
   } finally {
     await send('Emulation.clearDeviceMetricsOverride').catch(() => undefined)
-    await evaluate(`(() => { const saved=${JSON.stringify(saved)}; for (const key of ['theme','config']) { saved[key] === null ? localStorage.removeItem('scrcpy-studio:'+key) : localStorage.setItem('scrcpy-studio:'+key, saved[key]) } location.reload() })()`).catch(() => undefined)
+    await evaluate(`(() => { const saved=${JSON.stringify(saved)}; for (const key of ['theme','config']) { saved[key] === null ? localStorage.removeItem('scrcpy-studio:'+key) : localStorage.setItem('scrcpy-studio:'+key, saved[key]) } saved.onboarding === null ? localStorage.removeItem(${JSON.stringify(onboardingKey)}) : localStorage.setItem(${JSON.stringify(onboardingKey)},saved.onboarding); location.reload() })()`).catch(() => undefined)
     socket.close()
   }
 }

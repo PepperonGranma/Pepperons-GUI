@@ -29,6 +29,8 @@
     "start": "electron .",
     "start:debug": "electron . --remote-debugging-port=9222",
     "test:device": "node scripts/e2e-connected-device.cjs",
+    "test:commands": "node scripts/e2e-command-profile.cjs",
+    "test:hardening": "node scripts/e2e-hardening.cjs",
     "test:ui": "node scripts/e2e-interface.cjs",
     "test:guide": "node scripts/e2e-interface.cjs --guide-only",
     "dist": "npm run build && electron-builder"

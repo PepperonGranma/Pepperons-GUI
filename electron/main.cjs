@@ -148,24 +148,33 @@ function parseHelp(raw) {
   const options = []
   let current = null
   for (const line of lines) {
-    const match = line.match(/^\s*(?:(-[A-Za-z0-9]),\s*)?(--[a-z0-9][a-z0-9-]*)(?:[=\s]+(.+?))?\s*$/)
+    // Option declarations in scrcpy help are indented by four spaces. Requiring
+    // that exact level avoids treating indented usage examples as new options.
+    const match = line.match(/^ {4}(?:(-[A-Za-z0-9]),\s*)?(--[a-z0-9][a-z0-9-]*)(.*)$/)
     if (match) {
       if (current) options.push(current)
-      const hint = (match[3] || '').trim().replace(/^<|>$/g, '')
+      const suffix = (match[3] || '').trim()
+      const hint = (suffix.startsWith('[=') && suffix.endsWith(']')
+        ? suffix.slice(2, -1)
+        : suffix.startsWith('=') ? suffix.slice(1) : suffix).replace(/^<|>$/g, '')
       current = {
         name: match[2],
         short: match[1] || '',
         valueHint: hint,
         kind: hint ? 'value' : 'boolean',
+        optionalValue: suffix.startsWith('[='),
         category: categoryFor(match[2]),
         description: '',
       }
+    } else if (current && (/^\S/.test(line) || /^ {4}-[A-Za-z0-9](?:\s|$)/.test(line))) {
+      options.push(current)
+      current = null
     } else if (current && line.trim()) {
       current.description += `${current.description ? ' ' : ''}${line.trim()}`
     }
   }
   if (current) options.push(current)
-  return options
+  return [...new Map(options.map((option) => [option.name, option])).values()]
 }
 
 async function latestRelease() {
@@ -281,14 +290,114 @@ async function listDevices() {
 }
 
 function validateArgs(args) {
-  if (!Array.isArray(args) || args.some((arg) => typeof arg !== 'string' || arg.length > 2048 || arg.includes('\0'))) {
+  if (!Array.isArray(args) || args.some((arg) => typeof arg !== 'string' || arg.length > 2048 || /[\0\r\n]/.test(arg))) {
     throw new Error('Invalid Scrcpy arguments.')
   }
   if (args.join('').length > 32768) throw new Error('The generated command is too long.')
-  if (args.includes('--no-control')) {
-    const incompatible = ['--show-touches', '--stay-awake', '--turn-screen-off', '--power-off-on-close'].filter((flag) => args.includes(flag))
-    if (incompatible.length) throw new Error(`${incompatible.join(', ')} require Scrcpy device control. Use the live ADB controls instead.`)
+  const entries = args.map((arg) => {
+    const separator = arg.indexOf('=')
+    return { arg, name: separator < 0 ? arg : arg.slice(0, separator), value: separator < 0 ? undefined : arg.slice(separator + 1) }
+  })
+  if (entries.some(({ name }) => !/^--[a-z0-9][a-z0-9-]*$/.test(name))) throw new Error('Only long-form Scrcpy options are accepted.')
+  const duplicate = entries.find((entry, index) => entries.findIndex((candidate) => candidate.name === entry.name) !== index)
+  if (duplicate) throw new Error(`${duplicate.name} was provided more than once.`)
+  if (entries.some(({ value }) => value === '')) throw new Error('Empty option values are not valid. Clear the option or enable an optional-value flag without a value.')
+  const valueOptions = new Set(`--angle --audio-bit-rate --audio-buffer --audio-codec --audio-codec-options --audio-encoder --audio-output-buffer --audio-source --background-color --camera-ar --camera-facing --camera-fps --camera-id --camera-size --camera-zoom --capture-orientation --crop --display-id --display-ime-policy --display-orientation --gamepad --keyboard --max-fps --max-size --min-size-alignment --mouse --mouse-bind --new-display --orientation --pause-on-exit --port --push-target --record --record-format --record-orientation --render-driver --render-fit --screen-off-timeout --serial --shortcut-mod --start-app --tcpip --time-limit --tunnel-host --tunnel-port --v4l2-buffer --v4l2-sink --verbosity --video-bit-rate --video-buffer --video-codec --video-codec-options --video-encoder --video-source --window-height --window-title --window-width --window-x --window-y`.split(' '))
+  const optionalValueOptions = new Set(['--new-display', '--pause-on-exit', '--tcpip'])
+  const knownBooleanOptions = new Set(`--always-on-top --audio-dup --camera-high-speed --camera-torch --disable-screensaver --flex-display --force-adb-forward --fullscreen --ignore-video-encoder-constraints --keep-active --kill-adb-on-close --legacy-paste --list-apps --list-camera-sizes --list-cameras --list-displays --list-encoders --no-audio --no-audio-playback --no-cleanup --no-clipboard-autosync --no-control --no-downsize-on-error --no-key-repeat --no-mipmaps --no-mouse-hover --no-playback --no-power-on --no-terminal-title --no-vd-destroy-content --no-vd-system-decorations --no-video --no-video-playback --no-window --no-window-aspect-ratio-lock --otg --power-off-on-close --prefer-text --print-fps --raw-key-events --require-audio --select-tcpip --select-usb --show-touches --stay-awake --turn-screen-off --window-borderless`.split(' '))
+  const missingValue = entries.find(({ name, value }) => valueOptions.has(name) && value === undefined && !optionalValueOptions.has(name))
+  if (missingValue) throw new Error(`${missingValue.name} requires a value.`)
+  const booleanWithValue = entries.find(({ name, value }) => knownBooleanOptions.has(name) && value !== undefined)
+  if (booleanWithValue) throw new Error(`${booleanWithValue.name} is a boolean flag and does not accept a value.`)
+  const valueFor = (name) => entries.find((entry) => entry.name === name)?.value
+  const has = (name) => entries.some((entry) => entry.name === name)
+  const enums = {
+    '--audio-codec': ['opus', 'aac', 'flac', 'raw'],
+    '--audio-source': ['output', 'playback', 'mic', 'mic-unprocessed', 'mic-camcorder', 'mic-voice-recognition', 'mic-voice-communication', 'voice-call', 'voice-call-uplink', 'voice-call-downlink', 'voice-performance'],
+    '--camera-facing': ['front', 'back', 'external'],
+    '--display-ime-policy': ['local', 'fallback', 'hide'],
+    '--display-orientation': ['0', '90', '180', '270', 'flip0', 'flip90', 'flip180', 'flip270'],
+    '--gamepad': ['disabled', 'uhid', 'aoa'],
+    '--keyboard': ['disabled', 'sdk', 'uhid', 'aoa'],
+    '--mouse': ['disabled', 'sdk', 'uhid', 'aoa'],
+    '--pause-on-exit': ['true', 'false', 'if-error'],
+    '--record-format': ['mp4', 'mkv', 'm4a', 'mka', 'opus', 'aac', 'flac', 'wav'],
+    '--record-orientation': ['0', '90', '180', '270'],
+    '--render-driver': ['direct3d', 'opengl', 'opengles2', 'opengles', 'metal', 'software'],
+    '--render-fit': ['letterbox', 'stretched', 'unscaled'],
+    '--verbosity': ['verbose', 'debug', 'info', 'warn', 'error'],
+    '--video-codec': ['h264', 'h265', 'av1', 'vp8', 'vp9'],
+    '--video-source': ['display', 'camera'],
   }
+  for (const [name, choices] of Object.entries(enums)) {
+    const value = valueFor(name)
+    if (value !== undefined && !choices.includes(value)) throw new Error(`${name} must be one of: ${choices.join(', ')}.`)
+  }
+  const numeric = {
+    '--audio-buffer': { min: 0, max: 60000 }, '--audio-output-buffer': { min: 0, max: 60000 },
+    '--angle': { min: -360000, max: 360000 }, '--camera-fps': { min: 1, max: 1000 }, '--camera-zoom': { min: 0, max: 1000 }, '--display-id': { min: 0, max: 2147483647, integer: true },
+    '--max-fps': { min: 0.01, max: 1000 }, '--max-size': { min: 0, max: 65535, integer: true }, '--screen-off-timeout': { min: 0, max: 86400 },
+    '--time-limit': { min: 0, max: 2147483647 }, '--tunnel-port': { min: 0, max: 65535, integer: true },
+    '--v4l2-buffer': { min: 0, max: 60000 }, '--video-buffer': { min: 0, max: 60000 },
+    '--window-height': { min: 0, max: 65535, integer: true }, '--window-width': { min: 0, max: 65535, integer: true },
+    '--window-x': { min: -2147483648, max: 2147483647, integer: true }, '--window-y': { min: -2147483648, max: 2147483647, integer: true },
+  }
+  for (const [name, limits] of Object.entries(numeric)) {
+    const value = valueFor(name)
+    if (value === undefined) continue
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed) || parsed < limits.min || parsed > limits.max || (limits.integer && !Number.isInteger(parsed))) {
+      throw new Error(`${name} has an invalid numeric value: ${value}.`)
+    }
+  }
+  for (const name of ['--audio-bit-rate', '--video-bit-rate']) {
+    const value = valueFor(name)
+    if (value !== undefined && (!/^(?:\d+(?:\.\d+)?)[KMG]?$/i.test(value) || Number.parseFloat(value) <= 0)) throw new Error(`${name} must be a positive bitrate, optionally ending in K, M, or G.`)
+  }
+  const minAlignment = valueFor('--min-size-alignment')
+  if (minAlignment !== undefined && !['1', '2', '4', '8', '16'].includes(minAlignment)) throw new Error('--min-size-alignment must be 1, 2, 4, 8, or 16.')
+  const port = valueFor('--port')
+  if (port !== undefined && (!/^\d+(?::\d+)?$/.test(port) || port.split(':').some((part) => Number(part) < 1 || Number(part) > 65535) || (port.includes(':') && Number(port.split(':')[0]) > Number(port.split(':')[1])))) throw new Error('--port must contain one port or an ascending port range between 1 and 65535.')
+  const backgroundColor = valueFor('--background-color')
+  if (backgroundColor !== undefined && !/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(backgroundColor)) throw new Error('--background-color must use #RGB or #RRGGBB.')
+  const cameraAr = valueFor('--camera-ar')
+  if (cameraAr !== undefined && cameraAr !== 'sensor' && (!/^(?:\d+(?:\.\d+)?|\d+:\d+)$/.test(cameraAr) || cameraAr.split(':').some((part) => Number(part) <= 0))) throw new Error('--camera-ar must be sensor, a positive decimal, or num:den.')
+  const cameraSize = valueFor('--camera-size')
+  if (cameraSize !== undefined && (!/^\d+x\d+$/.test(cameraSize) || cameraSize.split('x').some((part) => Number(part) <= 0))) throw new Error('--camera-size must use positive widthxheight values.')
+  const crop = valueFor('--crop')
+  if (crop !== undefined && (!/^\d+:\d+:\d+:\d+$/.test(crop) || crop.split(':').slice(0, 2).some((part) => Number(part) <= 0))) throw new Error('--crop must use positive width:height and non-negative x:y values.')
+  const newDisplay = valueFor('--new-display')
+  if (newDisplay !== undefined && (!/^(?:\d+x\d+)?(?:\/\d+)?$/.test(newDisplay) || newDisplay.split(/[x/]/).filter(Boolean).some((part) => Number(part) <= 0))) throw new Error('--new-display must use positive widthxheight, widthxheight/dpi, /dpi, or no value.')
+  const mouseBind = valueFor('--mouse-bind')
+  if (mouseBind !== undefined && !/^[+\-bhsn]{4}(?::[+\-bhsn]{4})?$/.test(mouseBind)) throw new Error('--mouse-bind requires one or two four-character button maps.')
+  const shortcutMod = valueFor('--shortcut-mod')
+  if (shortcutMod !== undefined && !/^(?:lctrl|rctrl|lalt|ralt|lsuper|rsuper)(?:\+(?:lctrl|rctrl|lalt|ralt|lsuper|rsuper))*(?:,(?:lctrl|rctrl|lalt|ralt|lsuper|rsuper)(?:\+(?:lctrl|rctrl|lalt|ralt|lsuper|rsuper))*)*$/.test(shortcutMod)) throw new Error('--shortcut-mod contains an unsupported modifier expression.')
+  const tcpip = valueFor('--tcpip')
+  if (tcpip !== undefined && (/\s/.test(tcpip) || tcpip === '+' || (/:(\d+)$/.test(tcpip) && (Number(tcpip.match(/:(\d+)$/)[1]) < 1 || Number(tcpip.match(/:(\d+)$/)[1]) > 65535)))) throw new Error('--tcpip must use [+]ip[:port] with a valid port.')
+  const captureOrientation = valueFor('--capture-orientation')
+  if (captureOrientation !== undefined && !/^@?(?:0|90|180|270|flip0|flip90|flip180|flip270)?$/.test(captureOrientation)) throw new Error('--capture-orientation has an invalid orientation.')
+  const orientation = valueFor('--orientation')
+  if (orientation !== undefined && !/^(?:0|90|180|270|flip0|flip90|flip180|flip270)$/.test(orientation)) throw new Error('--orientation has an invalid orientation.')
+  if (args.includes('--no-control')) {
+    const incompatible = ['--show-touches', '--stay-awake', '--turn-screen-off', '--power-off-on-close', '--keyboard', '--mouse', '--gamepad']
+      .filter((flag) => entries.some((entry) => entry.name === flag))
+    if (incompatible.length) throw new Error(`${incompatible.join(', ')} require Scrcpy device control. Use the in-session ADB controls instead.`)
+  }
+  const selectors = args.filter((arg) => arg === '--serial' || arg.startsWith('--serial=') || arg === '--select-usb' || arg === '--select-tcpip' || arg.startsWith('--tcpip='))
+  if (selectors.length > 1) throw new Error(`Choose only one Scrcpy device selector: ${selectors.join(', ')}.`)
+  if (has('--audio-dup') && valueFor('--audio-source') !== 'playback') throw new Error('--audio-dup requires --audio-source=playback.')
+  const audioConfiguration = ['--audio-bit-rate', '--audio-buffer', '--audio-codec', '--audio-codec-options', '--audio-dup', '--audio-encoder', '--audio-output-buffer', '--audio-source', '--require-audio'].filter(has)
+  if (has('--no-audio') && audioConfiguration.length) throw new Error(`${audioConfiguration.join(', ')} cannot be combined with --no-audio.`)
+  const videoConfiguration = ['--video-bit-rate', '--video-buffer', '--video-codec', '--video-codec-options', '--video-encoder', '--video-source', '--max-fps', '--max-size', '--crop', '--camera-ar', '--camera-facing', '--camera-fps', '--camera-high-speed', '--camera-id', '--camera-size', '--camera-torch', '--camera-zoom', '--display-id', '--new-display'].filter(has)
+  if (has('--no-video') && videoConfiguration.length) throw new Error(`${videoConfiguration.join(', ')} cannot be combined with --no-video.`)
+  if (has('--camera-id') && has('--camera-facing')) throw new Error('Choose either --camera-id or --camera-facing, not both.')
+  const cameraOnly = ['--camera-ar', '--camera-facing', '--camera-fps', '--camera-high-speed', '--camera-id', '--camera-size', '--camera-torch', '--camera-zoom'].filter(has)
+  if (cameraOnly.length && valueFor('--video-source') !== 'camera') throw new Error(`${cameraOnly.join(', ')} require --video-source=camera.`)
+  const displayOnly = ['--display-id', '--new-display'].filter(has)
+  if (valueFor('--video-source') === 'camera' && displayOnly.length) throw new Error(`${displayOnly.join(', ')} cannot be combined with --video-source=camera.`)
+  if (has('--display-id') && has('--new-display')) throw new Error('--display-id cannot be combined with --new-display.')
+  if (has('--record-format') && !has('--record')) throw new Error('--record-format requires --record.')
+  if (has('--no-playback') && !has('--record') && !has('--v4l2-sink')) throw new Error('--no-playback requires --record or --v4l2-sink so the captured media has an output.')
   return [...args]
 }
 
@@ -369,20 +478,46 @@ async function terminateActive(reason) {
   record.intentional = true
   emitLog('info', `Stopping Scrcpy: ${reason}`)
   const pid = record.child.pid
-  if (process.platform === 'win32' && pid) {
-    runCapture('taskkill.exe', ['/pid', String(pid), '/t'], { timeoutMs: 4000 }).catch(() => record.child.kill())
-  } else {
-    record.child.kill('SIGTERM')
-  }
+  if (process.platform === 'win32' && pid) await requestWindowsConsoleStop(pid).catch(() => {})
+  else record.child.kill('SIGTERM')
   const exited = await Promise.race([
     record.closePromise.then(() => true),
-    new Promise((resolve) => setTimeout(() => resolve(false), 3000)),
+    new Promise((resolve) => setTimeout(() => resolve(false), record.recordingPath ? 5000 : 3000)),
   ])
   if (!exited && record.child.pid) {
     if (process.platform === 'win32') await runCapture('taskkill.exe', ['/pid', String(record.child.pid), '/t', '/f'], { timeoutMs: 4000 }).catch(() => record.child.kill())
     else record.child.kill('SIGKILL')
     await record.closePromise.catch(() => {})
   }
+}
+
+async function requestWindowsConsoleStop(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  // Electron has no interactive console from which to send Ctrl+C. Attach a
+  // short-lived helper to Scrcpy's console and generate the same signal a user
+  // would send in a terminal, allowing recorders to write their final index.
+  const script = `
+$source = @'
+using System;
+using System.Runtime.InteropServices;
+public static class PepperonConsoleSignal {
+  public delegate bool HandlerRoutine(uint ctrlType);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool FreeConsole();
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool AttachConsole(uint processId);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool SetConsoleCtrlHandler(HandlerRoutine handler, bool add);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool GenerateConsoleCtrlEvent(uint ctrlEvent, uint processGroupId);
+}
+'@
+Add-Type -TypeDefinition $source -ErrorAction Stop
+[PepperonConsoleSignal]::FreeConsole() | Out-Null
+if (-not [PepperonConsoleSignal]::AttachConsole(${pid})) { exit 2 }
+[PepperonConsoleSignal]::SetConsoleCtrlHandler($null, $true) | Out-Null
+if (-not [PepperonConsoleSignal]::GenerateConsoleCtrlEvent(0, 0)) { exit 3 }
+Start-Sleep -Milliseconds 250
+[PepperonConsoleSignal]::FreeConsole() | Out-Null
+`
+  const result = await runCapture('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], { timeoutMs: 4000 })
+  return result.code === 0
 }
 
 async function launchDesired(reason) {
@@ -405,7 +540,7 @@ async function launchDesired(reason) {
   })
   let resolveClose
   const closePromise = new Promise((resolve) => { resolveClose = resolve })
-  const record = { child, args: prepared.args, desiredArgs: [...desiredArgs], closePromise, resolveClose, intentional: false }
+  const record = { child, args: prepared.args, desiredArgs: [...desiredArgs], closePromise, resolveClose, intentional: false, recordingPath: prepared.recordingPath }
   activeSession = record
   emitLog('command', `scrcpy ${prepared.args.join(' ')}`)
   const handleOutput = (data) => {
@@ -463,7 +598,10 @@ async function applyLiveSettings(changes) {
 async function reconcileDesired(reason) {
   const liveChanges = [...pendingLiveChanges.values()]
   pendingLiveChanges.clear()
-  await applyLiveSettings(liveChanges)
+  // Offline changes are desired startup settings only. Applying them through
+  // ADB before launching would alter the phone outside a session and would
+  // make scrcpy snapshot the already-modified values for cleanup.
+  if (activeSession) await applyLiveSettings(liveChanges)
   if (!sessionIntent) {
     updateSession({ running: false, status: 'offline', reason })
     return sessionState
@@ -750,6 +888,7 @@ function registerIpc() {
     }
   })
   ipcMain.handle('scrcpy:state', () => sessionState)
+  ipcMain.handle('scrcpy:validate-args', (_event, args) => ({ valid: true, args: validateArgs(args) }))
   ipcMain.handle('scrcpy:start', async (_event, request = {}) => {
     desiredArgs = validateArgs(request.args)
     desiredGeneration += 1

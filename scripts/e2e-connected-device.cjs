@@ -105,6 +105,19 @@ async function main() {
   };
 
   await send('Runtime.enable');
+  const originalConfig = await evaluate(`localStorage.getItem('scrcpy-studio:config')`);
+  try {
+  const prepared = await evaluate(`(() => {
+    const config = JSON.parse(localStorage.getItem('scrcpy-studio:config') || '{}');
+    if (!config.recordingEnabled || config.recordPath) return false;
+    config.recordingEnabled = false;
+    localStorage.setItem('scrcpy-studio:config', JSON.stringify(config));
+    location.reload();
+    return true;
+  })()`);
+  if (prepared) {
+    await waitFor(evaluate, `document.readyState === 'complete' && !document.querySelector('.startup-loader')`, 'the safe test-configuration reload');
+  }
   assert(await clickButton('Studio'), 'Studio navigation button was not found');
   await waitFor(evaluate, `Boolean(document.querySelector('.session-button'))`, 'the Studio session controls');
   const initialText = await waitFor(
@@ -115,9 +128,9 @@ async function main() {
   );
   assert(initialText, 'No authorized connected device was rendered');
 
-  if ((await bodyText()).includes('Stop Stream')) {
+  if ((await bodyText()).includes('Stop Mirroring')) {
     assert(await clickSessionButton(), 'Could not reset the pre-existing mirror session');
-    await waitFor(evaluate, `document.body.innerText.includes('Go live')`, 'the initial stopped state');
+    await waitFor(evaluate, `document.body.innerText.includes('Start Mirroring')`, 'the initial stopped state');
   }
 
   const deviceSummary = await evaluate(`(async () => {
@@ -162,13 +175,13 @@ async function main() {
     for (const incompatible of ['--show-touches', '--stay-awake', '--turn-screen-off', '--power-off-on-close']) {
       assert(!desiredCommand.includes(incompatible), `View-only command still contains incompatible ${incompatible}`);
     }
-    assert(await clickSessionButton(true), 'Device Link Go live button was not found');
-    await waitFor(evaluate, `document.body.innerText.includes('Stop Stream') && document.body.innerText.includes('Session is live')`, 'a live view-only session', SESSION_WAIT_MS);
+    assert(await clickSessionButton(true), 'Device Link Start Mirroring button was not found');
+    await waitFor(evaluate, `document.body.innerText.includes('Stop Mirroring') && document.body.innerText.includes('Mirroring active')`, 'an active view-only session', SESSION_WAIT_MS);
     const regressionPid = await readPid();
     assert(regressionPid, 'The view-only session did not report a PID');
     console.log('VIEW_ONLY_START_FIXED', regressionPid);
-    assert(await clickSessionButton(), 'Stop Stream button was not found');
-    await waitFor(evaluate, `document.body.innerText.includes('Go live') && document.body.innerText.includes('No active mirror process')`, 'a clean regression-test stop');
+    assert(await clickSessionButton(), 'Stop Mirroring button was not found');
+    await waitFor(evaluate, `document.body.innerText.includes('Start Mirroring') && document.body.innerText.includes('No active mirror process')`, 'a clean regression-test stop');
     assert(await clickButton('Controls'), 'Controls navigation button was not found during cleanup');
     await waitFor(evaluate, `document.body.innerText.includes('Master control')`, 'the Controls page during cleanup');
     await evaluate(`(() => {
@@ -180,7 +193,6 @@ async function main() {
     await delay(500);
     assert(await clickButton('Studio'), 'Studio navigation button was not found during cleanup');
     console.log('RESULT start-mirroring regression test passed');
-    socket.close();
     return;
   }
 
@@ -196,6 +208,24 @@ async function main() {
   })()`);
   console.log('PROBED_DETAILS', JSON.stringify(probedCapabilities));
 
+  const offlineLiveAudit = await evaluate(`(async () => {
+    const count = () => (document.body.innerText.match(/Applied showTouches directly through ADB/g) || []).length;
+    const label = [...document.querySelectorAll('label')].find((item) => item.innerText.includes('Show touches'));
+    const input = label?.querySelector('input[type="checkbox"]');
+    if (!input) throw new Error('Show touches control was not found for the offline audit');
+    const original = input.checked;
+    const before = count();
+    input.click();
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    const after = count();
+    input.click();
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    return { before, after, restored: input.checked === original };
+  })()`);
+  assert(offlineLiveAudit.after === offlineLiveAudit.before, 'An offline setting change was sent to the device through ADB');
+  assert(offlineLiveAudit.restored, 'Offline setting audit did not restore the original GUI value');
+  console.log('OFFLINE_SETTINGS_STAGED', JSON.stringify(offlineLiveAudit));
+
   await evaluate(`(() => {
     const setToggle = (text, checked) => {
       const label = [...document.querySelectorAll('label')].find((item) => item.innerText.includes(text));
@@ -208,9 +238,9 @@ async function main() {
   })()`);
   await delay(500);
 
-  assert(await clickSessionButton(true), 'Device Link Go live button was not found');
-  await waitFor(evaluate, `document.body.innerText.includes('Stop Stream') && document.body.innerText.includes('Session is live')`, 'a live scrcpy session', SESSION_WAIT_MS);
-  assert(await evaluate(`[...document.querySelectorAll('.session-button')].every(button => button.textContent.trim() === 'Stop Stream')`), 'Both session buttons must show the live action');
+  assert(await clickSessionButton(true), 'Device Link Start Mirroring button was not found');
+  await waitFor(evaluate, `document.body.innerText.includes('Stop Mirroring') && document.body.innerText.includes('Mirroring active')`, 'an active scrcpy session', SESSION_WAIT_MS);
+  assert(await evaluate(`[...document.querySelectorAll('.session-button')].every(button => button.textContent.trim() === 'Stop Mirroring')`), 'Both session buttons must show the active action');
   const firstPid = await waitFor(evaluate, `(() => document.body.innerText.match(/PID\\s+(\\d+)/i)?.[1] || null)()`, 'the first scrcpy PID');
   console.log('STARTED', firstPid);
 
@@ -291,10 +321,10 @@ async function main() {
     .replace('PLACEHOLDER_BITRATE', original.bitrate));
 
   await waitFor(evaluate, `document.body.innerText.includes('--max-fps=${original.fps}') && document.body.innerText.includes('--video-bit-rate=${original.bitrate}')`, 'the restored command');
-  await waitFor(evaluate, `document.body.innerText.includes('Stop Stream') && document.body.innerText.includes('Session is live')`, 'the restored live session');
+  await waitFor(evaluate, `document.body.innerText.includes('Stop Mirroring') && document.body.innerText.includes('Mirroring active')`, 'the restored active session');
 
   assert(await clickSessionButton(true), 'Device Link stop button was not found');
-  await waitFor(evaluate, `document.body.innerText.includes('Go live') && document.body.innerText.includes('No active mirror process')`, 'a clean stopped state');
+  await waitFor(evaluate, `document.body.innerText.includes('Start Mirroring') && document.body.innerText.includes('No active mirror process')`, 'a clean stopped state');
   console.log('STOPPED cleanly');
 
   await send('Emulation.setDeviceMetricsOverride', {
@@ -318,7 +348,17 @@ async function main() {
   console.log('RESPONSIVE_390PX', JSON.stringify(responsive));
   await send('Emulation.clearDeviceMetricsOverride');
   console.log('RESULT connected-device end-to-end test passed');
-  socket.close();
+  } finally {
+    await evaluate(`(async () => {
+      await window.scrcpyStudio.stop().catch(() => undefined);
+      const original = ${JSON.stringify('CONFIG_PLACEHOLDER')};
+      if (original === null) localStorage.removeItem('scrcpy-studio:config');
+      else localStorage.setItem('scrcpy-studio:config', original);
+      location.reload();
+    })()` .replace(JSON.stringify('CONFIG_PLACEHOLDER'), JSON.stringify(originalConfig))).catch(() => undefined);
+    await delay(3500);
+    socket.close();
+  }
 }
 
 main().catch((error) => {
