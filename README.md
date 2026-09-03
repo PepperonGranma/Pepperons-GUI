@@ -1,83 +1,117 @@
-# Pepperon's GUI
+# 🐾 Pepperon's GUI
 
-A responsive, capability-aware Electron desktop GUI for controlling scrcpy mirroring, recording, audio, display, input, and ADB workflows from one interface.
+> Your Android control room—minus the command-line scavenger hunt.
 
-Pepperon's GUI is an independent community project. It uses the official [Genymobile scrcpy](https://github.com/Genymobile/scrcpy) runtime but is not affiliated with or endorsed by Genymobile.
+Pepperon's GUI turns scrcpy's enormous toolbox into a responsive desktop studio. Plug in a phone, pick your setup, press **Go live**, and start mirroring without memorizing a wall of flags.
 
-Appearance includes complete light and dark modes, customizable primary and secondary accents, an independent Highlight color, panel surfaces, density, corner radius, and background-pattern controls. Existing settings and profiles are retained under the original internal storage identifier.
+```text
+📱 Android device  →  🔌 ADB  →  🌶️ Pepperon's GUI  →  🖥️ scrcpy
+```
 
-## Highlights
+## Why you might like it
 
-- Full guided controls plus a searchable registry of every option reported by the installed scrcpy runtime
-- USB and wireless ADB discovery, pairing, TCP/IP mode, reconnect handling, and device capability probing
-- Video, camera, audio, display, input, recording, and live-session configuration
-- Reactive command previews, automatic live-setting application, profiles, logs, and responsive layouts
-- Fully customizable dark and light themes with accessible, keyboard-friendly custom dropdowns
+- 🎛️ **Tweak without flag spelunking** — guided controls for video, audio, input, displays, recording, and more
+- ⚡ **Change settings while you work** — eligible options apply live; startup-only changes restart cleanly
+- 🎨 **Make it yours** — full dark/light themes, custom accents, Highlight color, surfaces, density, radius, and patterns
+- 📡 **USB or wireless** — discover devices, pair ADB, enable TCP/IP, reconnect, and keep sessions moving
+- 🧰 **Nothing hidden** — search every option reported by the installed scrcpy runtime
+- 📐 **Big screen or tiny window** — the interface adapts from wide desktops down to 390 px
 
-## Requirements
+## Pick your flavor
 
-- Node.js and npm for development
-- An Android device with USB debugging enabled, or a device reachable over wireless ADB
-- scrcpy on `PATH`, a manually selected executable, or the managed Windows runtime installed by the app
+| Preset | Personality | Good for |
+| --- | --- | --- |
+| **Balanced** | The sensible daily driver | Everyday mirroring |
+| **Studio** | Crisp, polished, slightly fancy | Recording and presentation |
+| **Low latency** | Fast fingers, fewer frills | Games and responsive control |
+| **Wireless** | Cable-free and comfortable | Moving around without unplugging |
 
-## Run locally
+You can treat presets as a starting point and change absolutely everything afterward. Pepperon does not judge your bitrate choices.
+
+## Launch sequence 🚀
 
 ```powershell
 npm install
 npm run dev
 ```
 
-The app detects Scrcpy on `PATH`, beside the app, from `SCRCPY_PATH`, or from its managed runtime folder. On Windows, **Install Scrcpy** downloads the latest official win64/win32 release and verifies the GitHub-provided SHA-256 digest before unpacking it.
+Then connect an Android device with USB debugging enabled. The app finds scrcpy on `PATH`, beside the app, through `SCRCPY_PATH`, or in its managed runtime folder.
 
-## Build
+On Windows, **Install Scrcpy** downloads the latest official package and verifies its GitHub-provided SHA-256 digest before unpacking it.
+
+> **Does “Go live” broadcast me to the internet?** Nope. It starts a local scrcpy mirroring session on your PC. No surprise Twitch debut.
+
+## Open the control-room doors
+
+<details>
+<summary><strong>🎥 Video and camera</strong></summary>
+
+Choose display or camera capture, codec, encoder, bitrate, resolution, FPS, crop, camera facing, torch, and buffering. Device-reported capabilities help keep impossible combinations out of the way.
+
+</details>
+
+<details>
+<summary><strong>🎧 Audio</strong></summary>
+
+Control audio forwarding, source, codec, encoder, bitrate, buffer, and duplicate playback. Android-version support is detected and explained in the interface.
+
+</details>
+
+<details>
+<summary><strong>🎮 Controls and display</strong></summary>
+
+Configure keyboard, mouse, gamepad, clipboard, screen power, orientation, virtual displays, window geometry, and other interaction options. View-only sessions still route eligible controls through ADB.
+
+</details>
+
+<details>
+<summary><strong>⏺️ Recording and sessions</strong></summary>
+
+Pick the destination, format, playback behavior, and time limit. The dashboard shows process state, PID, generation, duration, reconnect progress, structured logs, and recording-safe restarts.
+
+</details>
+
+<details>
+<summary><strong>⌨️ Every command</strong></summary>
+
+Press **CTRL + K** and search the complete command catalog. The command preview shows the exact argument array Pepperon's GUI plans to run—no shell string tricks hiding behind the curtain.
+
+</details>
+
+## Build an installer
 
 ```powershell
 npm run build
 npm run dist
 ```
 
-`npm run build` creates the renderer in `dist/`. `npm run dist` also creates a Windows installer in `release/`.
+`npm run build` creates the renderer in `dist/`. `npm run dist` creates the Windows installer in `release/`.
 
-## Included controls
+## Verification lab 🧪
 
-- USB and Wi-Fi device discovery, authorization state, pairing, TCP/IP mode, and reconnect handling
-- Cached hardware, Android, display, refresh-rate, density, encoder, audio, and camera capability probing
-- Video, audio, camera, display, window, input, recording, and session controls
-- A searchable registry sourced from the installed runtime, with a Scrcpy 4.1 fallback catalog
-- Automatic apply: direct ADB changes for eligible live settings and a debounced, serialized restart for startup-only arguments
-- Valid view-only sessions: show-touches, keep-awake, and screen-power preferences are routed through ADB when `--no-control` is active, avoiding invalid Scrcpy flag combinations
-- Recording-safe restarted segments, explicit applying/restarting/reconnecting states, retry, and stale-process protection
-- Auto-start when a device appears and optional reconnection when the selected device returns
-- Live argument preview, process PID/generation/duration, structured logs, profiles, and fully customizable theme tokens
-- Wide desktop, tablet, and 390 px narrow layouts without horizontal overflow
-- An animated Device Link card spanning both desktop overview rows, with six status cards alongside and equal-height lower card pairs
-- Synchronized Go live / stop controls in the dashboard header and a compact button inside Device Link, retaining the phone artwork and live-session animation
-- Equal-height settings cards across Video, Audio, and other two-column settings pages
-- A single draggable header with native minimize, maximize/restore, and close controls
-- CTRL + K focuses and selects command search; typing searches across every command category
-- Theme-aware custom dropdowns with keyboard navigation, type-ahead, disabled-option handling, and viewport-aware popup placement
-- A Quick Starter Guide anchored at the bottom of the sidebar, with setup steps, page shortcuts, and connection troubleshooting
-
-The Electron bridge uses context isolation and passes Scrcpy options as an argument array without a shell.
-
-## Privacy
-
-Mirroring and device control happen locally between the computer, ADB, scrcpy, and the connected Android device. Network access may be used to load the interface fonts, check or download the latest official scrcpy release, and open explicitly selected project links.
-
-## Connected-device verification
-
-Build the renderer, start Electron with its local debugging endpoint, and run the deterministic device test from a second terminal:
+With the debug app running and mirroring stopped:
 
 ```powershell
 npm run build
 npm run start:debug
+npm run test:ui
+npm run test:guide
+```
+
+The interface suite checks branding, CTRL + K, custom dropdowns, both color modes, Highlight reactivity, responsive layouts, compact session controls, and equal-height card alignment.
+
+For the real-device obstacle course:
+
+```powershell
 npm run test:device
 ```
 
-The test requires one authorized Android device. It verifies capability data, a real mirror launch, one coalesced automatic restart after rapid codec/FPS/bitrate changes, direct ADB apply without a restart, clean stop, setting restoration, and the 390 px responsive breakpoint.
+That test requires one authorized Android device. It exercises capability discovery, a real mirror launch, automatic restart coalescing, direct ADB changes, clean shutdown, setting restoration, and the 390 px layout.
 
-## Interface verification
+## Privacy and project status
 
-With the debug app running and mirroring stopped, run `npm run test:ui` to check branding, CTRL + K, custom dropdowns, both color modes, Highlight reactivity, compact Go live buttons, and dashboard/settings-card alignment at desktop and narrow widths. The UI test restores the saved theme and configuration afterward.
+Mirroring and device control stay local between your computer, ADB, scrcpy, and the connected Android device. Network access may be used to load interface fonts, check or download the latest official scrcpy release, and open links you choose.
 
-Run `npm run test:guide` to verify the Starter Guide, its pinned sidebar button, all page shortcuts, troubleshooting accordions, and responsive layouts without changing stream settings.
+Pepperon's GUI is an independent community project. It uses the official [Genymobile scrcpy](https://github.com/Genymobile/scrcpy) runtime but is not affiliated with or endorsed by Genymobile.
+
+Found a bug, invented a wild setup, or have an idea that would make Pepperon purr? [Open an issue](https://github.com/PepperonGranma/Pepperons-GUI/issues).

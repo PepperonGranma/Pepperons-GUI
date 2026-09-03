@@ -2,7 +2,7 @@
   "name": "pepperons-gui",
   "version": "0.1.0",
   "private": true,
-  "description": "A responsive, themeable Electron GUI for complete scrcpy control",
+  "description": "Your Android control room: mirror, tune, record, and command scrcpy without memorizing every flag",
   "author": "PepperonGranma <pepperongranma@gmail.com>",
   "homepage": "https://github.com/PepperonGranma/Pepperons-GUI#readme",
   "bugs": {
