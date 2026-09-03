@@ -127,6 +127,10 @@ async function main() {
     30_000,
   );
   assert(initialText, 'No authorized connected device was rendered');
+  if (process.env.SCRCPY_TEST_SERIAL) {
+    await selectOption('Android device', process.env.SCRCPY_TEST_SERIAL);
+    await waitFor(evaluate, `document.querySelector('[role="combobox"][aria-label="Android device"]')?.dataset.value === ${JSON.stringify(process.env.SCRCPY_TEST_SERIAL)} && !document.body.innerText.includes('Inspecting device')`, 'the explicitly selected test device');
+  }
 
   if ((await bodyText()).includes('Stop Mirroring')) {
     assert(await clickSessionButton(), 'Could not reset the pre-existing mirror session');

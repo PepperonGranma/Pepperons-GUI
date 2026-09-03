@@ -60,6 +60,7 @@ async function main() {
     await evaluate(`localStorage.removeItem(${JSON.stringify(onboardingKey)}); location.reload()`)
     await delay(150)
     await wait(`Boolean(document.querySelector('.startup-loader .loader-cat'))`, 'Pepperon startup animation')
+    assert(!(await evaluate(`Boolean(document.querySelector('.startup-loader .squish-hand'))`)), 'Startup loader still renders the removed hands')
     assert(await evaluate(`document.querySelector('.startup-loader').getAttribute('role') === 'status'`), 'Startup loader is not announced')
     await wait(`!document.querySelector('.startup-loader')`, 'Startup animation completion')
     await wait(`Boolean(document.querySelector('.first-run-tour [role="dialog"]'))`, 'First-run feature tour')

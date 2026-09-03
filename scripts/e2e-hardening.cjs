@@ -15,7 +15,8 @@ function scrcpyProcessCount() {
 }
 
 function taskkill(pid) {
-  execFileSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { encoding: 'utf8', windowsHide: true })
+  // Simulate scrcpy itself dying, without trying to terminate its Windows console host.
+  execFileSync('taskkill.exe', ['/PID', String(pid), '/F'], { encoding: 'utf8', windowsHide: true })
 }
 
 function fileSummary(file) {

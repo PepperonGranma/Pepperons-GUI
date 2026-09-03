@@ -36,10 +36,7 @@
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
-    "adm-zip": "^0.6.0",
-    "lucide-react": "^0.468.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "adm-zip": "^0.6.0"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.7",
@@ -51,6 +48,9 @@
     "cross-env": "^7.0.3",
     "electron": "^35.0.0",
     "electron-builder": "^25.1.8",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "typescript": "~5.7.2",
     "vite": "^6.0.7",
     "wait-on": "^8.0.1"
@@ -67,7 +67,8 @@
       "output": "release"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "signAndEditExecutable": false
     }
   }
 }

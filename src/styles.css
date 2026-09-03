@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
-
 :root {
   color-scheme: dark;
   font-family: 'DM Sans', Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -850,12 +848,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .loader-cat-body::before { content: ''; position: absolute; inset: 12px 17px 15px; border-radius: 50%; background: rgba(239,232,237,.3); }
 .loader-cat-body > span { position: absolute; bottom: -5px; width: 29px; height: 45px; border: 3px solid #353640; border-top: 0; border-radius: 0 0 17px 17px; background: #afa5ad; }.loader-cat-body > span:first-child { left: 3px; }.loader-cat-body > span:last-child { right: 3px; }
 .loader-cat-tail { position: absolute; z-index: 1; right: -3px; bottom: 27px; width: 50px; height: 73px; border: 13px solid #aaa0a9; border-left-color: transparent; border-bottom-color: transparent; border-radius: 50%; transform: rotate(24deg); animation: pepperon-tail 1.25s ease-in-out infinite; }
-.squish-hand { position: absolute; z-index: 5; top: 92px; width: 112px; height: 69px; animation-duration: 1.25s; animation-timing-function: cubic-bezier(.45,.02,.32,1); animation-iteration-count: infinite; }
-.squish-hand i { position: absolute; top: 23px; width: 83px; height: 47px; border: 3px solid #4c3d46; border-radius: 24px; background: linear-gradient(#fff8f2, #f4dedb); box-shadow: 0 12px 24px rgba(0,0,0,.22); }
-.squish-hand span, .squish-hand b { position: absolute; z-index: 2; top: 6px; width: 61px; height: 25px; border: 3px solid #4c3d46; border-radius: 18px 18px 8px 8px; background: #fff6f0; transform-origin: bottom; }
-.squish-hand b { top: 39px; height: 22px; background: #f7e7e2; }
-.hand-left { left: 2px; animation-name: pepperon-hand-left; }.hand-left i { right: 0; }.hand-left span, .hand-left b { right: 0; transform: rotate(18deg); }.hand-left b { transform: rotate(-8deg); }
-.hand-right { right: 2px; animation-name: pepperon-hand-right; }.hand-right i { left: 0; }.hand-right span, .hand-right b { left: 0; transform: rotate(-18deg); }.hand-right b { transform: rotate(8deg); }
 .squish-shadow { position: absolute; left: 50%; bottom: 18px; width: 155px; height: 20px; border-radius: 50%; background: rgba(0,0,0,.36); filter: blur(7px); transform: translateX(-50%); animation: pepperon-shadow 1.25s ease-in-out infinite; }
 .squish-spark { position: absolute; z-index: 6; color: var(--pink); font-size: 24px; text-shadow: 0 0 15px var(--pink); animation: startup-twinkle 1.25s ease-in-out infinite; }.squish-spark.spark-a { left: 82px; top: 62px; }.squish-spark.spark-b { right: 80px; top: 48px; animation-delay: -.62s; }
 .startup-loader-copy { position: relative; z-index: 2; min-width: min(340px, calc(100vw - 40px)); display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 39px; padding: 9px 14px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel) 86%, transparent); backdrop-filter: blur(9px); }
@@ -869,8 +861,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 @keyframes startup-twinkle { 50% { opacity: .35; transform: scale(.7) rotate(16deg); } }
 @keyframes startup-dot { 50% { opacity: .25; transform: translateY(-3px); } }
 @keyframes pepperon-squish { 0%, 100% { transform: translateX(-50%) scale(1); } 38% { transform: translateX(-50%) translateY(12px) scale(1.13,.86); } 58% { transform: translateX(-50%) translateY(-8px) scale(.92,1.08); } }
-@keyframes pepperon-hand-left { 0%, 100% { transform: translateX(-8px) rotate(-2deg); } 38% { transform: translateX(35px) translateY(8px) rotate(6deg); } 58% { transform: translateX(18px) translateY(-3px) rotate(1deg); } }
-@keyframes pepperon-hand-right { 0%, 100% { transform: translateX(8px) rotate(2deg); } 38% { transform: translateX(-35px) translateY(8px) rotate(-6deg); } 58% { transform: translateX(-18px) translateY(-3px) rotate(-1deg); } }
 @keyframes pepperon-shadow { 38% { width: 175px; opacity: .8; } 58% { width: 128px; opacity: .5; } }
 @keyframes pepperon-tail { 50% { transform: rotate(8deg) translateX(5px); } }
 @keyframes pepperon-blink { 0%, 45%, 52%, 100% { transform: scaleY(1); } 48%, 50% { transform: scaleY(.12); } }

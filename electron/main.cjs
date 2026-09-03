@@ -27,9 +27,20 @@ let reconnectEnabled = true
 let applyTimer = null
 let lifecycleQueue = Promise.resolve()
 let sessionState = { running: false, status: 'offline', generation: 0, desiredArgs: [], appliedArgs: [] }
+let shutdownPromise = null
+let shutdownPrepared = false
 const capabilityCache = new Map()
 const capabilityRequests = new Map()
 const APPLY_DEBOUNCE_MS = 250
+
+function isAllowedExternalUrl(value) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && ['github.com', 'scrcpy.org'].includes(url.hostname)
+  } catch {
+    return false
+  }
+}
 
 const safeSend = (channel, payload) => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
@@ -972,6 +983,7 @@ function registerIpc() {
     return result
   })
   ipcMain.handle('dialog:save-recording', async (_event, format = 'mp4') => {
+    if (!['mp4', 'mkv', 'm4a', 'mka', 'opus', 'aac', 'flac', 'wav'].includes(format)) throw new Error('Invalid recording format.')
     const result = await dialog.showSaveDialog(mainWindow, {
       title: 'Choose recording destination',
       defaultPath: `scrcpy-${new Date().toISOString().replace(/[:.]/g, '-')}.${format}`,
@@ -980,9 +992,25 @@ function registerIpc() {
     return result.canceled ? '' : result.filePath || ''
   })
   ipcMain.handle('shell:open-external', (_event, url) => {
-    if (typeof url === 'string' && /^https:\/\/(github\.com|scrcpy\.org)\//.test(url)) return shell.openExternal(url)
+    if (typeof url === 'string' && isAllowedExternalUrl(url)) return shell.openExternal(url)
     return false
   })
+}
+
+function prepareForShutdown() {
+  if (shutdownPromise) return shutdownPromise
+  sessionIntent = false
+  reconnectEnabled = false
+  desiredGeneration += 1
+  if (applyTimer) { clearTimeout(applyTimer); applyTimer = null }
+  pendingLiveChanges.clear()
+  shutdownPromise = enqueueLifecycle(async () => {
+    if (activeSession) updateSession({ running: true, status: 'stopping', reason: 'application shutdown' })
+    await terminateActive('application shutdown')
+    appliedArgs = []
+    updateSession({ running: false, status: 'offline', pid: undefined, stoppedAt: Date.now(), recordingPath: '' })
+  }).finally(() => { shutdownPrepared = true })
+  return shutdownPromise
 }
 
 function createWindow() {
@@ -1004,6 +1032,20 @@ function createWindow() {
   const sendWindowState = () => safeSend('window:state-changed', { maximized: mainWindow.isMaximized() })
   mainWindow.on('maximize', sendWindowState)
   mainWindow.on('unmaximize', sendWindowState)
+  mainWindow.on('close', (event) => {
+    if (shutdownPrepared) return
+    event.preventDefault()
+    prepareForShutdown().finally(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close()
+    })
+  })
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedExternalUrl(url)) shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url !== mainWindow.webContents.getURL()) event.preventDefault()
+  })
   if (isDev) mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
   else mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
 }
@@ -1020,7 +1062,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => {
-  sessionIntent = false
-  activeSession?.child.kill()
+app.on('before-quit', (event) => {
+  if (shutdownPrepared) return
+  event.preventDefault()
+  prepareForShutdown().finally(() => app.quit())
 })
