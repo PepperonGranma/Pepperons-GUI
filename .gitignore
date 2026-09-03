@@ -1,0 +1,15 @@
+node_modules/
+dist/
+release/
+.cache/
+.vite/
+coverage/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+!.env.example
+*.local
+.DS_Store
+Thumbs.db
+Desktop.ini

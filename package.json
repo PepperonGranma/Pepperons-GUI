@@ -1,0 +1,71 @@
+{
+  "name": "pepperons-gui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A responsive, themeable Electron GUI for complete scrcpy control",
+  "author": "PepperonGranma <pepperongranma@gmail.com>",
+  "homepage": "https://github.com/PepperonGranma/Pepperons-GUI#readme",
+  "bugs": {
+    "url": "https://github.com/PepperonGranma/Pepperons-GUI/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PepperonGranma/Pepperons-GUI.git"
+  },
+  "keywords": [
+    "scrcpy",
+    "android",
+    "adb",
+    "electron",
+    "screen-mirroring",
+    "desktop-app"
+  ],
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "start": "electron .",
+    "start:debug": "electron . --remote-debugging-port=9222",
+    "test:device": "node scripts/e2e-connected-device.cjs",
+    "test:ui": "node scripts/e2e-interface.cjs",
+    "test:guide": "node scripts/e2e-interface.cjs --guide-only",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "adm-zip": "^0.6.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "~5.7.2",
+    "vite": "^6.0.7",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "studio.scrcpy.desktop",
+    "productName": "Pepperon's GUI",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
