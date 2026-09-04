@@ -6,6 +6,13 @@ release/
 coverage/
 *.tsbuildinfo
 *.log
+*.tmp
+*.dmp
+*.stackdump
+recordings/
+scrcpy-*.mp4
+scrcpy-*.mkv
+scrcpy-*.m4a
 .env
 .env.*
 !.env.example

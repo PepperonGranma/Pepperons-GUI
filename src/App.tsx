@@ -3,6 +3,8 @@ import { Dropdown } from './Dropdown'
 import { FirstRunTour } from './FirstRunTour'
 import { QuickStarterGuide } from './QuickStarterGuide'
 import { StartupLoader } from './StartupLoader'
+import { CommandCard } from './CommandCard'
+import { withConstraints } from '../electron/command-constraints.mjs'
 import {
   Activity, AppWindow, AudioLines, BatteryCharging, Box, Camera, Check,
   CircleDot as Record, Clipboard, Command, Copy, Cpu, Download, Gamepad2, Gauge, Github, Info, Keyboard, Laptop,
@@ -85,7 +87,7 @@ function configurationIssue(config: StudioConfig, capabilities: DeviceCapabiliti
     const camera = capabilities?.camera.cameras.find((item) => item.id === config.cameraId)
     if (capabilities?.camera.reported && !camera) return `Camera ${config.cameraId} is unavailable on this device.`
     if (camera && config.cameraSize && camera.sizes.length && !camera.sizes.includes(config.cameraSize)) return `${config.cameraSize} is unavailable for camera ${config.cameraId}.`
-    if (camera && config.cameraFps && camera.frameRates.length && !camera.frameRates.includes(Number(config.cameraFps))) return `${config.cameraFps} FPS is unavailable for camera ${config.cameraId}.`
+    if (camera && config.cameraFps && Number(config.cameraFps) !== 0 && camera.frameRates.length && !camera.frameRates.includes(Number(config.cameraFps))) return `${config.cameraFps} FPS is unavailable for camera ${config.cameraId}.`
   }
   return ''
 }
@@ -300,6 +302,7 @@ export default function App() {
     return FALLBACK_OPTIONS.map((fallback) => ({ ...fallback, ...(live.get(fallback.name) || {}), source: live.has(fallback.name) ? 'runtime' as const : 'fallback' as const, runtimeAvailable: canDetermine ? live.has(fallback.name) : undefined }))
       .concat((runtime?.options || []).filter((item) => !FALLBACK_OPTIONS.some((fallback) => fallback.name === item.name)).map((item) => ({ ...item, source: 'runtime' as const, runtimeAvailable: true })))
       .filter((item) => !['--help', '--version'].includes(item.name))
+      .map(option => option.runtimeAvailable === false ? { ...option, constraints: undefined } : withConstraints(option, runtime?.installedVersion))
   }, [runtime])
   const args = useMemo(() => buildArgs(capabilities?.audio.forwardingSupported === false ? { ...config, audioEnabled: false } : config), [config, capabilities?.audio.forwardingSupported])
   const commandText = `scrcpy${args.length ? ` ${args.join(' ')}` : ''}`
@@ -831,17 +834,10 @@ function OptionsPage({ options, config, setConfig, search, onSearch, category, o
       {filtered.map((option) => {
         const guided = getGuidedOptionValue(config, option.name)
         const current = guided !== undefined ? guided : config.extras[option.name]
-        const enabled = current === true || (typeof current === 'string' && current.length > 0)
-        const unavailable = option.runtimeAvailable === false
-        const oneShot = ONE_SHOT_OPTIONS.has(option.name)
-        return <div className={`option-row ${enabled ? 'enabled' : ''} ${unavailable ? 'unavailable' : ''}`} key={option.name}>
-          <div className="option-copy"><span className="option-category">{option.category} · {unavailable ? 'UNAVAILABLE IN RUNTIME' : option.source === 'runtime' ? 'RUNTIME' : 'FALLBACK'}</span><code>{option.name}</code><p>{option.description || `Pass ${option.name} to Scrcpy.`}</p>{option.valueHint && <small>Value: {option.valueHint}</small>}</div>
-          <div className="option-editor">
-            {oneShot ? <button className="run-action" disabled={unavailable || !config.serial} onClick={async () => { const result = await api.runScrcpyAction([`--serial=${config.serial}`, option.name]).catch((error) => ({ code: 1, output: error.message })); addLog(result.code === 0 ? 'success' : 'error', result.output) }}><Play size={14} />Run</button>
-            : option.kind === 'boolean' ? <Switch label="" checked={current === true} disabled={unavailable} onChange={(value) => setExtra(option, value)} />
-              : <><input disabled={unavailable} value={typeof current === 'string' ? current : ''} onChange={(event) => setExtra(option, event.target.value)} placeholder={option.valueHint || 'value'} /><button disabled={unavailable} className={enabled ? 'active' : ''} aria-label={enabled ? `Clear ${option.name}` : option.optionalValue ? `Enable ${option.name} without a value` : `Focus ${option.name}`} title={enabled ? 'Clear value' : option.optionalValue ? 'Enable without a value' : 'Enter a value'} onClick={(event) => { if (enabled) setExtra(option, ''); else if (option.optionalValue) setExtra(option, true); else (event.currentTarget.previousElementSibling as HTMLInputElement | null)?.focus() }}>{enabled ? <X size={15} /> : <Plus size={15} />}</button></>}
-          </div>
-        </div>
+        return <CommandCard key={option.name} option={option} current={current} onChange={value => setExtra(option, value)} oneShot={ONE_SHOT_OPTIONS.has(option.name)} canRun={Boolean(config.serial)} onRun={async () => {
+          const result = await api.runScrcpyAction([`--serial=${config.serial}`, option.name]).catch(error => ({ code: 1, output: error.message }))
+          addLog(result.code === 0 ? 'success' : 'error', result.output)
+        }} />
       })}
       {!filtered.length && <EmptyState icon={<Search />} title="No matching command" text="Try a broader name or choose another category." />}
     </div>
@@ -874,7 +870,7 @@ function AppearancePage({ theme, setTheme, onReset }: { theme: ThemeSettings; se
         <button className="full secondary" onClick={onReset}><RotateCw size={16} />Restore default theme</button>
       </SectionCard>
       <SectionCard title="Interactive preview" kicker="INTERFACE" icon={theme.mode === 'dark' ? <MoonStar size={18} /> : <Sun size={18} />} className="theme-preview-card">
-        <div className="theme-swatch-preview"><div className="preview-banner"><CatMark /><span>Pepperon's GUI</span></div><div className="preview-controls"><i /><i /><button>Start Mirroring</button></div><div className="preview-lines"><span /><span /><span /></div></div>
+        <div className="theme-swatch-preview"><div className="preview-banner"><CatMark /><span>Pepperon's GUI</span></div><div className="preview-controls"><i /><i /><button>Go live</button></div><div className="preview-lines"><span /><span /><span /></div></div>
       </SectionCard>
     </div>
   </PageFrame>
@@ -966,7 +962,7 @@ function SessionButton({ session, disabled, onClick, className = '' }: {
   const active = session.running || busy
   return <button type="button" className={`primary session-button ${active ? 'stop' : ''} ${className}`} onClick={onClick} disabled={disabled || session.status === 'stopping'}>
     {active ? <Square size={15} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-    {session.status === 'live' ? 'Stop Mirroring' : busy ? session.status.toUpperCase() : 'Start Mirroring'}
+    {session.status === 'live' ? 'Stop Stream' : busy ? session.status.toUpperCase() : 'Go live'}
   </button>
 }
 

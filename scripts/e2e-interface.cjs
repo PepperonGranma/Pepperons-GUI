@@ -72,7 +72,7 @@ async function main() {
       'Plug in. Approve. High-five.',
       'Tune the mirror before it leaves the phone',
       'Your colors. Your corners. Your vibe.',
-      'Start mirroring—locally',
+      'Go live—locally',
     ]
     for (const title of titles) {
       await click('.tour-next')
@@ -116,7 +116,7 @@ async function main() {
     assert.equal(await evaluate(`document.querySelectorAll('.guide-steps > li').length`), 6)
     assert.equal(await evaluate(`document.querySelectorAll('.guide-help details').length`), 3)
     assert(await evaluate(`Boolean(document.querySelector('[data-start-feature-tour]'))`), 'Feature-tour replay control is missing')
-    assert(await evaluate(`document.querySelector('.starter-guide').innerText.includes('Stop Mirroring')`))
+    assert(await evaluate(`document.querySelector('.starter-guide').innerText.includes('Stop Stream')`))
     assert(await evaluate(`document.documentElement.scrollWidth<=innerWidth && [...document.querySelectorAll('.guide-step,.guide-shortcuts button')].every(e=>e.scrollWidth<=e.clientWidth)`), `Guide overflows at ${width}px`)
     if (width <= 920) assert(!(await evaluate(`document.querySelector('.sidebar').classList.contains('is-open')`)), 'Guide must close mobile navigation')
     await click('.guide-help summary')
@@ -157,14 +157,14 @@ async function main() {
     assert.equal(layout.overview.length, 7, 'Expected Device Link and six overview cards')
     assert(layout.scrollWidth <= width, `Dashboard overflows at ${width}px`)
     same(layout.stage.height, layout.linkContent.height, 'Artwork fills the tall card')
-    assert(layout.goLive.top >= layout.caption.bottom && layout.goLive.bottom < link.bottom, 'Start Mirroring sits below the device caption inside Device Link')
-    assert(layout.goLive.left >= link.left && layout.goLive.right <= link.right, 'Start Mirroring fits Device Link')
-    assert(layout.goLive.height <= 32 && layout.goLive.right - layout.goLive.left <= 160, 'Device Link Start Mirroring stays compact')
-    assert(layout.goLive.right - layout.goLive.left < (link.right - link.left) * .8, 'Device Link Start Mirroring must not be full-width')
+    assert(layout.goLive.top >= layout.caption.bottom && layout.goLive.bottom < link.bottom, 'Go live sits below the device caption inside Device Link')
+    assert(layout.goLive.left >= link.left && layout.goLive.right <= link.right, 'Go live fits Device Link')
+    assert(layout.goLive.height <= 32 && layout.goLive.right - layout.goLive.left <= 160, 'Device Link Go live stays compact')
+    assert(layout.goLive.right - layout.goLive.left < (link.right - link.left) * .8, 'Device Link Go live must not be full-width')
     assert(layout.decorativeBars.every(content => content === 'none' || content === 'normal'), 'Device Link decorative bars remain')
     const buttons = await evaluate(`[...document.querySelectorAll('.session-button')].map(button => ({label:button.textContent.trim(),disabled:button.disabled}))`)
     assert.equal(buttons.length, 2, 'Expected header and Device Link session buttons')
-    assert.equal(buttons[0].label, 'Start Mirroring', 'Idle session action is Start Mirroring')
+    assert.equal(buttons[0].label, 'Go live', 'Idle session action is Go live')
     assert.deepEqual(buttons[0], buttons[1], 'Both session buttons must share label and availability')
     if (width > 1180) {
       same(link.top, hardware.top, 'Device Link top aligns with row one')
@@ -252,7 +252,7 @@ async function main() {
   }
   if (await evaluate(`(async () => (await window.scrcpyStudio.getSessionState()).running)()`)) {
     socket.close()
-    throw new Error('Use Stop Mirroring before UI tests; the active session was left untouched')
+    throw new Error('Use Stop Stream before UI tests; the active session was left untouched')
   }
   const saved = await evaluate(`({ theme: localStorage.getItem('scrcpy-studio:theme'), config: localStorage.getItem('scrcpy-studio:config'), onboarding: localStorage.getItem(${JSON.stringify(onboardingKey)}) })`)
   try {

@@ -33,11 +33,21 @@ and run:
 
 ```powershell
 npm run test:commands
+npm run test:constraints
+npm run test:constraint-ui
 npm run test:ui
 npm run test:guide
 npm run test:device
 npm run test:hardening
 ```
+
+For startup regressions, set `PEPPERON_TEST_EXE` to that same packaged/installed
+EXE and run `npm run test:startup`. It checks the first loader frames, repeated
+launches, settings preservation, and restoring the existing minimized window.
+Leave the primary window open during the test. For a development launch, omit
+`PEPPERON_TEST_EXE`; `node scripts/e2e-startup.cjs --unit-only` checks the main-process
+lifecycle without launching an app. Close all older app versions before testing;
+pre-0.1.2 builds do not participate in the single-instance lock.
 
 `SCRCPY_TEST_SERIAL` optionally selects the phone for `test:device`.
 `scripts/e2e-profile-relaunch.cjs stage|verify` requires a complete app restart
@@ -50,8 +60,10 @@ Keep shared ADB running and do not substitute logical disconnect tests for a phy
 USB-unplug test. Never distribute shortcuts with remote-debugging flags.
 
 Run `node scripts/verify-package.cjs` after packaging to check ASAR contents, source
-matching, all embedded icon groups, metadata, sizes, and SHA-256 hashes. Additional
-EXE path arguments verify the installed app and uninstaller with the same checks.
+matching, all embedded icon groups, metadata, sizes, SHA-256 hashes, and the complete
+legal-notice set. It verifies the project `LICENSE`, `THIRD_PARTY_NOTICES.md`, reviewed
+bundled-library licenses, and Electron/Chromium runtime notices in `win-unpacked`.
+Additional EXE path arguments verify the installed app and uninstaller with the same checks.
 
 ## Unsigned and trusted signing
 

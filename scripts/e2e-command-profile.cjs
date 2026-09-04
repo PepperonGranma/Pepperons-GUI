@@ -193,6 +193,7 @@ async function main() {
         ['--video-codec-options=profile:1=high,level:1=4.2'],
         ['--crop=640:480:10:20'],
         ['--window-x=-120','--window-y=0'],
+        ['--max-fps=0'],['--port=27199:27183'],
         ['--video-buffer=0','--time-limit=0','--window-width=0','--window-height=0','--tunnel-port=0'],
         ['--pause-on-exit=false'],['--pause-on-exit'],['--new-display'],['--new-display=/240'],['--tcpip'],
         ['--video-source=camera','--camera-id=0','--camera-size=1920x1080','--camera-fps=30'],
@@ -211,13 +212,13 @@ async function main() {
         ['--background-color=#1a2b3c','--angle=-22.5','--video-source=camera','--camera-ar=4:3','--mouse-bind=bhsn:++++','--shortcut-mod=lctrl,lsuper'],
       ];
       const invalidCases=[
-        ['--max-fps='],['--max-fps=0'],['--video-buffer=-1'],['--video-codec=unknown'],['--video-bit-rate=fast'],
+        ['--max-fps='],['--video-buffer=-1'],['--video-codec=unknown'],['--video-bit-rate=fast'],
         ['--port=70000'],['--crop=bad'],['--new-display=wide'],['--audio-source=output','--audio-dup'],
         ['--video-source=display','--camera-id=0'],['--display-id=0','--new-display'],['--no-playback'],
         ['--serial=one','--select-usb'],['--no-control','--keyboard=sdk'],['--no-audio','--audio-codec=opus'],
         ['--record-format=mp4'],['--max-fps=60','--max-fps=30'],['--window-title=line\\nbreak'],
         ['--max-fps'],['--fullscreen=false'],['--angle=sideways'],['--background-color=purple'],['--camera-ar=0'],
-        ['--mouse-bind=bad'],['--shortcut-mod=ctrl'],['--port=27199:27183'],['--camera-size=0x1080'],['--crop=0:480:0:0'],
+        ['--mouse-bind=bad'],['--shortcut-mod=ctrl'],['--camera-size=0x1080'],['--crop=0:480:0:0'],
         ['--new-display=/0'],['--tcpip=127.0.0.1:70000'],['--no-video','--video-codec=h264'],
         ['--video-source=camera','--display-id=0'],['--no-control','--show-touches','--stay-awake','--turn-screen-off','--power-off-on-close'],
       ];

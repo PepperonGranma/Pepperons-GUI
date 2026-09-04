@@ -22,8 +22,8 @@ const steps: GuideStep[] = [
     links: [{ page: 'video', label: 'Open Video' }],
   },
   {
-    title: 'Start mirroring, then stop', icon: Play,
-    body: <>Press <strong>Start Mirroring</strong> in the Studio header or Device Link card. The <strong>MIRRORING</strong> state and a process PID confirm the session is running. Press <strong>Stop Mirroring</strong> in either place to end it.</>,
+    title: 'Go live, then Stop Stream', icon: Play,
+    body: <>Press <strong>Go live</strong> in the Studio header or Device Link card. The <strong>MIRRORING</strong> state and a process PID confirm the session is running. Press <strong>Stop Stream</strong> in either place to end it.</>,
     links: [{ page: 'studio', label: 'Go to session controls' }],
   },
   {
@@ -66,7 +66,7 @@ export function QuickStarterGuide({ onNavigate, onStartTour }: { onNavigate(page
       <button type="button" data-start-feature-tour onClick={onStartTour}><Play size={15} />Play feature tour</button>
     </section>
 
-    <aside className="guide-callout"><Info size={19} aria-hidden="true" /><p><strong>Mirroring stays local.</strong> Start Mirroring opens Scrcpy on this PC. Guide shortcuts only open pages; they never start a session or change settings.</p></aside>
+    <aside className="guide-callout"><Info size={19} aria-hidden="true" /><p><strong>Mirroring stays local.</strong> Go live opens scrcpy on this PC. Guide shortcuts only open pages; they never start a session or change settings.</p></aside>
 
     <ol className="guide-steps">
       {steps.map(({ title, icon: Icon, body, links }, index) => <li className="guide-step" key={title}>
@@ -86,7 +86,7 @@ export function QuickStarterGuide({ onNavigate, onStartTour }: { onNavigate(page
       <h2 id="guide-help-title">If something gets stuck</h2>
       <details><summary>No device appears, or it says unauthorized</summary><p>Unlock your phone and check for the USB debugging approval prompt. Confirm the cable supports data, then use the refresh button on Studio’s Connected device card. Only select a device you recognize.</p></details>
       <details><summary>I want to connect over Wi-Fi</summary><p>Put the PC and phone on the same trusted network. For wireless debugging pairing, enter the phone’s pairing IP:port and pairing code in Studio’s ADB Connection card, then choose Pair. Replace the address with the phone’s connection IP:port and choose Connect—the pairing and connection ports can differ.</p></details>
-      <details><summary>Start Mirroring is disabled, or the session fails</summary><p>Start Mirroring needs an installed runtime and an authorized device. In Video, make sure Capture source is the source you intend to use. Check Studio’s Activity log for the actual error, then review the selected codec, encoder, or recording destination before retrying.</p></details>
+      <details><summary>Go live is disabled, or the session fails</summary><p>Go live needs an installed runtime and an authorized device. In Video, make sure Capture source is the source you intend to use. Check Studio’s Activity log for the actual error, then review the selected codec, encoder, or recording destination before retrying.</p></details>
     </section>
   </article>
 }

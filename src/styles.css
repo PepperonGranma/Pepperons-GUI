@@ -828,8 +828,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .guide-tour-banner { align-items: flex-start; flex-wrap: wrap; }.guide-tour-banner > button { width: 100%; justify-content: center; margin-left: 0; }.guide-tour-banner::after { display: none; }
 }
 
+.command-input-group { min-width: 0; }
+.command-constraints { display: grid; gap: 3px; margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--line); color: var(--muted); font-size: 9px; line-height: 1.5; overflow-wrap: anywhere; }
+.command-constraints strong { color: var(--text); font-weight: 500; }
+.command-constraints .constraint-source { color: var(--pink); font-size: 8px; }
+.command-constraints .constraint-device { font-style: italic; }
+.command-validation-error { margin: 6px 0 0; color: var(--danger, #ff758a); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.option-editor input[aria-invalid="true"] { border-color: var(--danger, #ff758a); }
+
 /* Startup mascot loader, inspired by the soft squeeze-and-bounce reference. */
-.startup-loader { position: fixed; z-index: 600; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; color: var(--text); background: radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--accent) 17%, transparent), transparent 26%), var(--bg); animation: startup-arrive .28s ease both; }
+.startup-loader { position: fixed; z-index: 600; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; color: var(--text); background: radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--accent) 17%, transparent), transparent 26%), var(--bg); opacity: 1; }
 .startup-loader.is-leaving { pointer-events: none; animation: startup-leave .42s cubic-bezier(.4,0,.2,1) both; }
 .startup-loader::before, .startup-loader::after { content: ''; position: absolute; left: 50%; top: 48%; border: 1px solid color-mix(in srgb, var(--mint) 20%, transparent); border-radius: 50%; transform: translate(-50%,-50%); animation: startup-ring 2.6s ease-out infinite; }
 .startup-loader::before { width: min(440px, 78vw); height: min(440px, 78vw); }.startup-loader::after { width: min(620px, 105vw); height: min(620px, 105vw); animation-delay: -1.3s; }
@@ -855,7 +863,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .startup-loader > small { position: relative; z-index: 2; margin-top: 13px; color: var(--muted); font: 700 8px 'Space Mono', monospace; letter-spacing: .13em; }
 .theme-light .startup-loader { background: radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 28%), var(--bg); }
 
-@keyframes startup-arrive { from { opacity: 0; transform: scale(1.02); } }
 @keyframes startup-leave { to { opacity: 0; transform: scale(1.035); filter: blur(5px); } }
 @keyframes startup-ring { from { opacity: .5; transform: translate(-50%,-50%) scale(.74); } to { opacity: 0; transform: translate(-50%,-50%) scale(1.08); } }
 @keyframes startup-twinkle { 50% { opacity: .35; transform: scale(.7) rotate(16deg); } }

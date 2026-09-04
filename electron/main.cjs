@@ -8,6 +8,15 @@ const os = require('node:os')
 const path = require('node:path')
 const AdmZip = require('adm-zip')
 
+// A GUI process may outlive the terminal or test launcher that created it. Electron
+// occasionally writes IPC diagnostics to those inherited streams; a closed pipe must
+// not turn that diagnostic into a native uncaught-exception dialog.
+for (const stream of [process.stdout, process.stderr]) {
+  stream?.on?.('error', (error) => {
+    if (error?.code !== 'EPIPE') setImmediate(() => { throw error })
+  })
+}
+
 const APP_NAME = "Pepperon's GUI"
 // Keep the existing runtime, preferences, and Chromium profile across the rebrand.
 const settingsDirectory = path.join(app.getPath('appData'), 'scrcpy-studio')
@@ -16,8 +25,18 @@ app.setName(APP_NAME)
 app.setPath('userData', settingsDirectory)
 if (process.platform === 'win32') app.setAppUserModelId('studio.scrcpy.desktop')
 
+// Acquire the shared profile lock before registering IPC or creating a renderer.
+// A duplicate launch must never open a competing Chromium profile/settings store.
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+  return
+}
+
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
+const { constraintsFor, validateConstraint, withConstraints } = require('./command-constraints.mjs')
+let constraintRuntimeVersion = ''
 let mainWindow
+let mainWindowReady = false
 let activeSession = null
 let cachedRuntime = null
 let desiredArgs = []
@@ -33,6 +52,16 @@ let shutdownPrepared = false
 const capabilityCache = new Map()
 const capabilityRequests = new Map()
 const APPLY_DEBOUNCE_MS = 250
+
+function focusMainWindow() {
+  // Repeated launches during startup must not reveal an unpainted window.
+  if (!mainWindow || mainWindow.isDestroyed() || !mainWindowReady || shutdownPromise) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+app.on('second-instance', focusMainWindow)
 
 function isAllowedExternalUrl(value) {
   try {
@@ -259,8 +288,9 @@ async function runtimeStatus() {
     try {
       const version = await runCapture(runtime.scrcpyPath, ['--version'])
       installedVersion = version.output.match(/scrcpy\s+([\w.-]+)/i)?.[1] || version.output.split('\n')[0]
+      constraintRuntimeVersion = installedVersion
       const help = await runCapture(runtime.scrcpyPath, ['--help'])
-      options = parseHelp(help.output)
+      options = parseHelp(help.output).map(option => withConstraints({ ...option, source: 'runtime' }, installedVersion))
     } catch {}
   }
   let release = { version: '4.1', url: 'https://github.com/Genymobile/scrcpy/releases/latest' }
@@ -328,13 +358,11 @@ function validateArgs(args) {
     '--audio-source': ['output', 'playback', 'mic', 'mic-unprocessed', 'mic-camcorder', 'mic-voice-recognition', 'mic-voice-communication', 'voice-call', 'voice-call-uplink', 'voice-call-downlink', 'voice-performance'],
     '--camera-facing': ['front', 'back', 'external'],
     '--display-ime-policy': ['local', 'fallback', 'hide'],
-    '--display-orientation': ['0', '90', '180', '270', 'flip0', 'flip90', 'flip180', 'flip270'],
     '--gamepad': ['disabled', 'uhid', 'aoa'],
     '--keyboard': ['disabled', 'sdk', 'uhid', 'aoa'],
     '--mouse': ['disabled', 'sdk', 'uhid', 'aoa'],
     '--pause-on-exit': ['true', 'false', 'if-error'],
     '--record-format': ['mp4', 'mkv', 'm4a', 'mka', 'opus', 'aac', 'flac', 'wav'],
-    '--record-orientation': ['0', '90', '180', '270'],
     '--render-driver': ['direct3d', 'opengl', 'opengles2', 'opengles', 'metal', 'software'],
     '--render-fit': ['letterbox', 'stretched', 'unscaled'],
     '--verbosity': ['verbose', 'debug', 'info', 'warn', 'error'],
@@ -345,31 +373,17 @@ function validateArgs(args) {
     const value = valueFor(name)
     if (value !== undefined && !choices.includes(value)) throw new Error(`${name} must be one of: ${choices.join(', ')}.`)
   }
-  const numeric = {
-    '--audio-buffer': { min: 0, max: 60000 }, '--audio-output-buffer': { min: 0, max: 60000 },
-    '--angle': { min: -360000, max: 360000 }, '--camera-fps': { min: 1, max: 1000 }, '--camera-zoom': { min: 0, max: 1000 }, '--display-id': { min: 0, max: 2147483647, integer: true },
-    '--max-fps': { min: 0.01, max: 1000 }, '--max-size': { min: 0, max: 65535, integer: true }, '--screen-off-timeout': { min: 0, max: 86400 },
-    '--time-limit': { min: 0, max: 2147483647 }, '--tunnel-port': { min: 0, max: 65535, integer: true },
-    '--v4l2-buffer': { min: 0, max: 60000 }, '--video-buffer': { min: 0, max: 60000 },
-    '--window-height': { min: 0, max: 65535, integer: true }, '--window-width': { min: 0, max: 65535, integer: true },
-    '--window-x': { min: -2147483648, max: 2147483647, integer: true }, '--window-y': { min: -2147483648, max: 2147483647, integer: true },
-  }
-  for (const [name, limits] of Object.entries(numeric)) {
-    const value = valueFor(name)
+  for (const { name, value } of entries) {
     if (value === undefined) continue
-    const parsed = Number(value)
-    if (!Number.isFinite(parsed) || parsed < limits.min || parsed > limits.max || (limits.integer && !Number.isInteger(parsed))) {
-      throw new Error(`${name} has an invalid numeric value: ${value}.`)
-    }
+    const error = validateConstraint(value, constraintsFor(name, constraintRuntimeVersion))
+    if (error) throw new Error(`${name}: ${error}`)
   }
-  for (const name of ['--audio-bit-rate', '--video-bit-rate']) {
+  // These strings are forwarded to Android, not range-checked by scrcpy's CLI.
+  // Retain basic numeric syntax validation without inventing upper/lower bounds.
+  for (const name of ['--angle', '--max-fps', '--camera-zoom']) {
     const value = valueFor(name)
-    if (value !== undefined && (!/^(?:\d+(?:\.\d+)?)[KMG]?$/i.test(value) || Number.parseFloat(value) <= 0)) throw new Error(`${name} must be a positive bitrate, optionally ending in K, M, or G.`)
+    if (value !== undefined && !Number.isFinite(Number(value))) throw new Error(`${name} must be a finite number.`)
   }
-  const minAlignment = valueFor('--min-size-alignment')
-  if (minAlignment !== undefined && !['1', '2', '4', '8', '16'].includes(minAlignment)) throw new Error('--min-size-alignment must be 1, 2, 4, 8, or 16.')
-  const port = valueFor('--port')
-  if (port !== undefined && (!/^\d+(?::\d+)?$/.test(port) || port.split(':').some((part) => Number(part) < 1 || Number(part) > 65535) || (port.includes(':') && Number(port.split(':')[0]) > Number(port.split(':')[1])))) throw new Error('--port must contain one port or an ascending port range between 1 and 65535.')
   const backgroundColor = valueFor('--background-color')
   if (backgroundColor !== undefined && !/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(backgroundColor)) throw new Error('--background-color must use #RGB or #RRGGBB.')
   const cameraAr = valueFor('--camera-ar')
@@ -386,10 +400,6 @@ function validateArgs(args) {
   if (shortcutMod !== undefined && !/^(?:lctrl|rctrl|lalt|ralt|lsuper|rsuper)(?:\+(?:lctrl|rctrl|lalt|ralt|lsuper|rsuper))*(?:,(?:lctrl|rctrl|lalt|ralt|lsuper|rsuper)(?:\+(?:lctrl|rctrl|lalt|ralt|lsuper|rsuper))*)*$/.test(shortcutMod)) throw new Error('--shortcut-mod contains an unsupported modifier expression.')
   const tcpip = valueFor('--tcpip')
   if (tcpip !== undefined && (/\s/.test(tcpip) || tcpip === '+' || (/:(\d+)$/.test(tcpip) && (Number(tcpip.match(/:(\d+)$/)[1]) < 1 || Number(tcpip.match(/:(\d+)$/)[1]) > 65535)))) throw new Error('--tcpip must use [+]ip[:port] with a valid port.')
-  const captureOrientation = valueFor('--capture-orientation')
-  if (captureOrientation !== undefined && !/^@?(?:0|90|180|270|flip0|flip90|flip180|flip270)?$/.test(captureOrientation)) throw new Error('--capture-orientation has an invalid orientation.')
-  const orientation = valueFor('--orientation')
-  if (orientation !== undefined && !/^(?:0|90|180|270|flip0|flip90|flip180|flip270)$/.test(orientation)) throw new Error('--orientation has an invalid orientation.')
   if (args.includes('--no-control')) {
     const incompatible = ['--show-touches', '--stay-awake', '--turn-screen-off', '--power-off-on-close', '--keyboard', '--mouse', '--gamepad']
       .filter((flag) => entries.some((entry) => entry.name === flag))
@@ -506,8 +516,9 @@ async function terminateActive(reason) {
 async function requestWindowsConsoleStop(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false
   // Electron has no interactive console from which to send Ctrl+C. Attach a
-  // short-lived helper to Scrcpy's console and generate the same signal a user
-  // would send in a terminal, allowing recorders to write their final index.
+  // short-lived helper to Scrcpy's console and send Ctrl+Break, which Scrcpy
+  // handles as a clean quit and which cannot be inherited as ignored. This
+  // gives recorders time to write their final index before the process exits.
   const script = `
 $source = @'
 using System;
@@ -524,8 +535,8 @@ Add-Type -TypeDefinition $source -ErrorAction Stop
 [PepperonConsoleSignal]::FreeConsole() | Out-Null
 if (-not [PepperonConsoleSignal]::AttachConsole(${pid})) { exit 2 }
 [PepperonConsoleSignal]::SetConsoleCtrlHandler($null, $true) | Out-Null
-if (-not [PepperonConsoleSignal]::GenerateConsoleCtrlEvent(0, 0)) { exit 3 }
-Start-Sleep -Milliseconds 250
+if (-not [PepperonConsoleSignal]::GenerateConsoleCtrlEvent(1, 0)) { exit 3 }
+Start-Sleep -Milliseconds 500
 [PepperonConsoleSignal]::FreeConsole() | Out-Null
 `
   const result = await runCapture('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], { timeoutMs: 4000 })
@@ -1015,6 +1026,13 @@ function prepareForShutdown() {
 }
 
 function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    focusMainWindow()
+    return
+  }
+  mainWindowReady = false
+  shutdownPromise = null
+  shutdownPrepared = false
   mainWindow = new BrowserWindow({
     title: APP_NAME,
     icon: app.isPackaged ? path.join(process.resourcesPath, 'icon.ico') : path.join(__dirname, '..', 'build', 'icon.ico'),
@@ -1024,12 +1042,21 @@ function createWindow() {
     minHeight: 620,
     backgroundColor: '#0e0e10',
     frame: false,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
+  })
+  mainWindow.once('ready-to-show', () => {
+    mainWindowReady = true
+    focusMainWindow()
+  })
+  mainWindow.on('closed', () => {
+    mainWindow = null
+    mainWindowReady = false
   })
   const sendWindowState = () => safeSend('window:state-changed', { maximized: mainWindow.isMaximized() })
   mainWindow.on('maximize', sendWindowState)

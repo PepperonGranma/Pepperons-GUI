@@ -1,6 +1,7 @@
 export type NavId = 'studio' | 'video' | 'audio' | 'control' | 'display' | 'recording' | 'options' | 'profiles' | 'appearance' | 'guide'
 
 export interface CliOption {
+  constraints?: import('../electron/command-constraints.mjs').CliConstraints
   name: string
   short?: string
   valueHint: string

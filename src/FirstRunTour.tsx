@@ -49,8 +49,8 @@ const TOUR_STEPS: TourStep[] = [
   },
   {
     kicker: 'READY FOR ACTION',
-    title: 'Start mirroring—locally',
-    copy: 'Press Start Mirroring to open scrcpy on this PC. Watch the session state and activity log, then use Stop Mirroring when you are finished.',
+    title: 'Go live—locally',
+    copy: 'Press Go live to open scrcpy on this PC. Watch the session state and activity log, then use Stop Stream when you are finished.',
     icon: Play,
     scene: 'launch',
     note: 'CTRL + K finds any command. Mirroring remains local to this PC.',
@@ -86,7 +86,7 @@ function TourScene({ scene }: { scene: TourStep['scene'] }) {
 
   return <div className="tour-scene tour-launch-scene" aria-hidden="true">
     <span className="tour-live-ring ring-one" /><span className="tour-live-ring ring-two" />
-    <div className="tour-go-live"><Play /><strong>Start Mirroring</strong></div>
+    <div className="tour-go-live"><Play /><strong>Go live</strong></div>
     <div className="tour-local-pill"><i />LOCAL SESSION</div>
     <div className="tour-command-hint"><Command /><span>CTRL + K</span><small>Every command</small></div>
   </div>

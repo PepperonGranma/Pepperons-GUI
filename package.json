@@ -1,8 +1,9 @@
 {
   "name": "pepperons-gui",
-  "version": "0.1.1",
+  "version": "0.1.4",
   "private": true,
   "description": "Your Android control room: mirror, tune, record, and command scrcpy without memorizing every flag",
+  "license": "Apache-2.0",
   "author": "PepperonGranma <pepperongranma@gmail.com>",
   "homepage": "https://github.com/PepperonGranma/Pepperons-GUI#readme",
   "bugs": {
@@ -22,6 +23,10 @@
   ],
   "main": "electron/main.cjs",
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10"
+  },
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "build": "tsc -b && vite build",
@@ -34,27 +39,30 @@
     "test:hardening": "node scripts/e2e-hardening.cjs",
     "test:ui": "node scripts/e2e-interface.cjs",
     "test:guide": "node scripts/e2e-interface.cjs --guide-only",
+    "test:startup": "node scripts/e2e-startup.cjs",
+    "test:constraints": "node scripts/test-command-constraints.cjs",
+    "test:constraint-ui": "node scripts/e2e-command-constraints.cjs",
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
     "adm-zip": "^0.6.0"
   },
   "devDependencies": {
-    "@types/adm-zip": "^0.5.7",
-    "@types/node": "^22.10.2",
-    "@types/react": "^19.0.2",
-    "@types/react-dom": "^19.0.2",
-    "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^9.1.2",
-    "cross-env": "^7.0.3",
+    "@types/adm-zip": "^0.5.8",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
     "electron": "44.2.0",
     "electron-builder": "26.16.0",
-    "lucide-react": "^0.468.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "typescript": "~5.7.2",
-    "vite": "^6.0.7",
-    "wait-on": "^8.0.1"
+    "lucide-react": "0.468.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "wait-on": "^9.1.0"
   },
   "build": {
     "appId": "studio.scrcpy.desktop",
@@ -63,13 +71,19 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "!electron/**/*.d.mts",
       "package.json"
     ],
     "directories": {
       "output": "release",
       "buildResources": "build"
     },
-    "extraResources": [{ "from": "build/icon.ico", "to": "icon.ico" }],
+    "extraResources": [
+      { "from": "build/icon.ico", "to": "icon.ico" },
+      { "from": "LICENSE", "to": "LICENSE.txt" },
+      { "from": "THIRD_PARTY_NOTICES.md", "to": "THIRD_PARTY_NOTICES.md" },
+      { "from": "licenses", "to": "licenses" }
+    ],
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
       "icon": "build/icon.ico",
