@@ -11,7 +11,9 @@ Use Node.js 22.12+ (Node 24 is used for release validation), then:
 ```powershell
 npm ci
 npm run build
+npm run test:installer-shell
 npm run dist
+npm run test:installer-package
 ```
 
 Electron and electron-builder are pinned in `package.json` and the lockfile.
@@ -64,6 +66,17 @@ matching, all embedded icon groups, metadata, sizes, SHA-256 hashes, and the com
 legal-notice set. It verifies the project `LICENSE`, `THIRD_PARTY_NOTICES.md`, reviewed
 bundled-library licenses, and Electron/Chromium runtime notices in `win-unpacked`.
 Additional EXE path arguments verify the installed app and uninstaller with the same checks.
+
+The packaging hook copies only the pinned, hash-checked Nsis7z and SpiderBanner
+plug-ins into a project-local generated resource directory. It adapts the pinned
+electron-builder templates so shortcut AppUserModelID, unpin, and Jump List cleanup
+use NSIS System calls to documented Windows COM interfaces. It also replaces the
+offline installer's utility calls with standard NSIS FileFunc/ExecShell operations
+and disables the unused elevation helper. Run `npm run test:installer-shell` to
+exercise the exact COM macros against a private Unicode shortcut. The deep package
+verifier opens the outer NSIS archive, nested uninstaller, application payload, and
+corresponding-source ZIP; it checks the exact plug-in hashes and rejects any copy or
+reference to the removed shortcut helper.
 
 ## Unsigned and trusted signing
 

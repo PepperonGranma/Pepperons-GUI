@@ -133,7 +133,7 @@ async function main() {
     })`)))
     await wait(`Boolean(document.readyState==='complete' && !document.querySelector('.startup-loader') && document.querySelector('nav'))`, 'stress fixture reload')
     await nav('Studio')
-    assert(await evaluate(`(() => { const button=document.querySelector('.dashboard-header .session-button'); if(!button||button.disabled)return false; button.click(); return true })()`), 'Go live was unavailable')
+    assert(await evaluate(`(() => { const button=document.querySelector('.dashboard-header .session-button'); if(!button||button.disabled)return false; button.click(); return true })()`), 'Start Mirroring was unavailable')
     let current = await waitLive('--max-fps=60')
     assert.equal(scrcpyProcessCount(), 1, 'Initial start created more than one scrcpy process')
 

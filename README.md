@@ -3,14 +3,14 @@
 > A friendly Windows control room for scrcpy—because nobody should have to
 > memorize a small novel of command-line flags just to mirror a phone.
 
-[![Version](https://img.shields.io/badge/version-0.1.4-ff6bd6)](https://github.com/PepperonGranma/Pepperons-GUI)
+[![Latest release](https://img.shields.io/github/v/release/PepperonGranma/Pepperons-GUI?color=ff6bd6)](https://github.com/PepperonGranma/Pepperons-GUI/releases/latest)
 [![Status](https://img.shields.io/badge/status-pre--1.0-00dec7)](#project-status)
 [![Platform](https://img.shields.io/badge/platform-Windows%20x64-2f81f7)](#system-requirements)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 Pepperon's GUI wraps [scrcpy](https://github.com/Genymobile/scrcpy) in a
 responsive Electron desktop interface. Connect an Android device, shape a setup,
-and press **Go live**. The app assembles and validates an argument array, launches
+and press **Start Mirroring**. The app assembles and validates an argument array, launches
 scrcpy directly, and keeps the command preview visible so nothing is hidden behind
 the curtain.
 
@@ -39,9 +39,9 @@ the curtain.
 
 ### Windows installer
 
-Official installers will be published on the project's
-[GitHub Releases page](https://github.com/PepperonGranma/Pepperons-GUI/releases).
-Download the Windows x64 setup executable, run it, then connect a device with USB
+Download the Windows x64 installer from the project's
+[latest GitHub Release](https://github.com/PepperonGranma/Pepperons-GUI/releases/latest),
+run it, then connect a device with USB
 debugging enabled. Builds are currently unsigned, so Windows may show a publisher or
 SmartScreen warning; verify that the file came from this repository before running it.
 
@@ -68,7 +68,7 @@ Node.js 24 is the release-validation environment.
 2. Connect the phone by USB and accept its ADB authorization prompt.
 3. Select the device in Pepperon's GUI.
 4. Choose a preset or tune the controls yourself.
-5. Press **Go live**. When the show is over, press **Stop Stream**.
+5. Press **Start Mirroring**. When the show is over, press **Stop Mirroring**.
 
 Wireless ADB remains on your local network. Pair or enable TCP/IP from the Connection
 card, then select the wireless device just like a USB device.
@@ -152,3 +152,9 @@ that make Pepperon purr without making the settings page grow whiskers.
 Pepperon's GUI is licensed under the [Apache License 2.0](LICENSE). Third-party
 components keep their own licenses; packaged and optional-runtime details are listed
 in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Big paw-bump to Genymobile, Romain Vimont, and the scrcpy contributors for the
+engine under the hood—and to the Electron, Chromium, Node.js, React, Lucide, and
+Feather communities whose work helps this control room feel at home on Windows.
+Names and links are acknowledgements, not endorsements; the formal credits and
+license texts live in the third-party notices above.

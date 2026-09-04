@@ -870,7 +870,7 @@ function AppearancePage({ theme, setTheme, onReset }: { theme: ThemeSettings; se
         <button className="full secondary" onClick={onReset}><RotateCw size={16} />Restore default theme</button>
       </SectionCard>
       <SectionCard title="Interactive preview" kicker="INTERFACE" icon={theme.mode === 'dark' ? <MoonStar size={18} /> : <Sun size={18} />} className="theme-preview-card">
-        <div className="theme-swatch-preview"><div className="preview-banner"><CatMark /><span>Pepperon's GUI</span></div><div className="preview-controls"><i /><i /><button>Go live</button></div><div className="preview-lines"><span /><span /><span /></div></div>
+        <div className="theme-swatch-preview"><div className="preview-banner"><CatMark /><span>Pepperon's GUI</span></div><div className="preview-controls"><i /><i /><button>Start Mirroring</button></div><div className="preview-lines"><span /><span /><span /></div></div>
       </SectionCard>
     </div>
   </PageFrame>
@@ -962,7 +962,7 @@ function SessionButton({ session, disabled, onClick, className = '' }: {
   const active = session.running || busy
   return <button type="button" className={`primary session-button ${active ? 'stop' : ''} ${className}`} onClick={onClick} disabled={disabled || session.status === 'stopping'}>
     {active ? <Square size={15} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-    {session.status === 'live' ? 'Stop Stream' : busy ? session.status.toUpperCase() : 'Go live'}
+    {session.status === 'live' ? 'Stop Mirroring' : busy ? session.status.toUpperCase() : 'Start Mirroring'}
   </button>
 }
 

@@ -233,7 +233,7 @@ async function main() {
 
     const invalid = await evaluate(`(async () => {
       const errors=[];
-      for (const args of [['x'.repeat(2049)],['--serial=e6455cd3','--select-usb'],['--serial=e6455cd3','--no-control','--show-touches']]) {
+      for (const args of [['x'.repeat(2049)],['--serial=fixture-device-001','--select-usb'],['--serial=fixture-device-001','--no-control','--show-touches']]) {
         try { await window.scrcpyStudio.runScrcpyAction(args); errors.push('accepted') } catch(error) { errors.push(error.message) }
       }
       return errors;
