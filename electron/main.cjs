@@ -14,6 +14,7 @@ const settingsDirectory = path.join(app.getPath('appData'), 'scrcpy-studio')
 fs.mkdirSync(settingsDirectory, { recursive: true })
 app.setName(APP_NAME)
 app.setPath('userData', settingsDirectory)
+if (process.platform === 'win32') app.setAppUserModelId('studio.scrcpy.desktop')
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
 let mainWindow
@@ -1016,6 +1017,7 @@ function prepareForShutdown() {
 function createWindow() {
   mainWindow = new BrowserWindow({
     title: APP_NAME,
+    icon: app.isPackaged ? path.join(process.resourcesPath, 'icon.ico') : path.join(__dirname, '..', 'build', 'icon.ico'),
     width: 1480,
     height: 940,
     minWidth: 860,

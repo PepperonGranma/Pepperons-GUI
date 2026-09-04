@@ -87,6 +87,9 @@ npm run dist
 
 `npm run build` creates the renderer in `dist/`. `npm run dist` creates the Windows installer in `release/`.
 
+For clean builds, icon exports, packaged-app checks, and trusted Windows signing,
+see the [release checklist](docs/RELEASING.md). The default build is intentionally unsigned.
+
 ## Verification lab 🧪
 
 With the debug app running and mirroring stopped:

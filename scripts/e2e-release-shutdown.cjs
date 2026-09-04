@@ -1,11 +1,14 @@
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
 const { execFileSync } = require('node:child_process')
 const { setTimeout: delay } = require('node:timers/promises')
 
 const DEBUG_URL = process.env.SCRCPY_STUDIO_DEBUG_URL || 'http://127.0.0.1:9444'
 const MODE = process.argv[2]
-const RECORDING_PATH = process.env.PEPPERON_RELEASE_RECORDING || ''
+let RECORDING_PATH = process.env.PEPPERON_RELEASE_RECORDING || ''
+let ownedRecordingDirectory = ''
 const BACKUP_KEY = 'scrcpy-studio:release-relaunch-backup'
 const PROFILE_ID = 'pepperon-release-relaunch-proof'
 const MODES = ['security', 'offline', 'idle', 'mirroring', 'applying', 'recording', 'persist-stage', 'persist-verify']
@@ -72,7 +75,10 @@ async function waitForApplicationExit() {
 
 async function main() {
   assert(MODES.includes(MODE), `Use: node scripts/e2e-release-shutdown.cjs ${MODES.join('|')}`)
-  if (MODE === 'recording') assert(RECORDING_PATH, 'PEPPERON_RELEASE_RECORDING is required for recording mode')
+  if (MODE === 'recording' && !RECORDING_PATH) {
+    ownedRecordingDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'pepperon-release-recording-'))
+    RECORDING_PATH = path.join(ownedRecordingDirectory, 'shutdown.mp4')
+  }
   const adbBefore = processCount('adb.exe')
   const { socket, evaluate, send, resourceRequests } = await connect()
   const waitState = (expression, label, timeout) => waitFor(
@@ -253,5 +259,13 @@ async function main() {
 main().catch((error) => {
   console.error('RESULT failed')
   console.error(error.stack || error)
-  process.exit(1)
+  process.exitCode = 1
+}).finally(() => {
+  if (ownedRecordingDirectory) {
+    const target = fs.realpathSync(ownedRecordingDirectory)
+    const tempRoot = fs.realpathSync(os.tmpdir())
+    assert(target.startsWith(`${tempRoot}${path.sep}`) && path.basename(target).startsWith('pepperon-release-recording-'), 'Unexpected recording cleanup target')
+    fs.rmSync(target, { recursive: true, force: true })
+    console.log(`REMOVED temporary recording directory ${target}`)
+  }
 })

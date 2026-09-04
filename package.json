@@ -1,6 +1,6 @@
 {
   "name": "pepperons-gui",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Your Android control room: mirror, tune, record, and command scrcpy without memorizing every flag",
   "author": "PepperonGranma <pepperongranma@gmail.com>",
@@ -25,6 +25,7 @@
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "build": "tsc -b && vite build",
+    "build:icons": "electron scripts/build-icons.cjs",
     "preview": "vite preview",
     "start": "electron .",
     "start:debug": "electron . --remote-debugging-port=9222",
@@ -46,8 +47,8 @@
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
-    "electron": "^35.0.0",
-    "electron-builder": "^25.1.8",
+    "electron": "44.2.0",
+    "electron-builder": "26.16.0",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -58,17 +59,29 @@
   "build": {
     "appId": "studio.scrcpy.desktop",
     "productName": "Pepperon's GUI",
+    "copyright": "Copyright © 2026 PepperonGranma",
     "files": [
       "dist/**/*",
       "electron/**/*",
       "package.json"
     ],
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
+    "extraResources": [{ "from": "build/icon.ico", "to": "icon.ico" }],
     "win": {
-      "target": "nsis",
-      "signAndEditExecutable": false
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico",
+      "signExecutable": false
+    },
+    "nsis": {
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "shortcutName": "Pepperon's GUI",
+      "uninstallDisplayName": "Pepperon's GUI",
+      "deleteAppDataOnUninstall": false
     }
   }
 }
