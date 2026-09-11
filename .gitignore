@@ -20,3 +20,4 @@ scrcpy-*.m4a
 .DS_Store
 Thumbs.db
 Desktop.ini
+.vscode/
