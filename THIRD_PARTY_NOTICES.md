@@ -13,7 +13,7 @@ own licenses and are not relicensed by this project.
 | React, React DOM, Scheduler | 19.2.8 / 19.2.8 / 0.27.0 | MIT | `licenses/react-MIT.txt` |
 | Lucide React | 0.468.0 | ISC | `licenses/lucide-ISC.txt` |
 | Feather icon designs incorporated by Lucide | 4.29.2 lineage | MIT | `licenses/feather-MIT.txt` |
-| adm-zip | 0.6.0 | MIT | `licenses/adm-zip-MIT.txt` |
+| adm-zip | 0.6.1 | MIT | `licenses/adm-zip-MIT.txt` |
 
 The Lucide ISC notice credits Cole Bemis for the Feather portions. The separate
 Feather MIT notice, including its 2013–2023 Cole Bemis copyright, is included

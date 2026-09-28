@@ -5,6 +5,7 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 const { execFileSync } = require('node:child_process')
 const { getMakeNsisPath } = require('app-builder-lib/out/toolsets/windows')
+const prepareInstaller = require('./prepare-installer.cjs').default
 const root = path.resolve(__dirname, '..')
 const quote = value => value.replaceAll('$', '$$').replaceAll('"', '$\\"')
 
@@ -15,8 +16,9 @@ async function main() {
   const shortcut = path.join(directory, 'Shortcut with spaces ♥.lnk')
   const results = path.join(directory, 'results.txt')
   const appId = 'studio.scrcpy.shell-acceptance-fixture'
-  const nsis = await getMakeNsisPath('0.0.0')
   try {
+    await prepareInstaller({ electronPlatformName: 'win32', packager: { projectDir: root } })
+    const nsis = await getMakeNsisPath('0.0.0')
     for (const phase of ['create', 'cleanup']) {
       const exe = path.join(directory, `${phase}.exe`)
       const source = `Unicode true

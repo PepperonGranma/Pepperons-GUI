@@ -11,7 +11,7 @@ const pkg = require('../package.json')
 const installer = process.argv[2]
   ? path.resolve(process.argv[2])
   : path.join(root, 'release', `${pkg.build.productName} Setup ${pkg.version}.exe`)
-const sevenZip = 'C:/Program Files/7-Zip/7z.exe'
+const sevenZip = path.join(root, 'node_modules', 'electron-winstaller', 'vendor', '7z.exe')
 const hash = data => createHash('sha256').update(data).digest('hex')
 const forbiddenHash = '9be85b986ea66a6997dde658abe82b3147ed2a1a3dcb784bb5176f41d22815a6'
 
@@ -38,7 +38,7 @@ function scan(directory, layer) {
 }
 
 async function main() {
-  assert(fs.existsSync(sevenZip), '7-Zip is required for release archive inspection')
+  assert(fs.existsSync(sevenZip), 'Bundled 7-Zip is missing; run npm ci before release archive inspection')
   assert(fs.existsSync(installer), 'Release installer is missing')
   const cache = path.join(root, '.cache')
   await fsp.mkdir(cache, { recursive: true })

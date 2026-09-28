@@ -47,7 +47,7 @@
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
-    "adm-zip": "^0.6.0"
+    "adm-zip": "^0.6.1"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
