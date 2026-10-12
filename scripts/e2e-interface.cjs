@@ -4,8 +4,8 @@ const { setTimeout: delay } = require('node:timers/promises')
 // Run against npm run start:debug. No extra browser-testing dependency required.
 async function main() {
   const targets = await (await fetch(`${process.env.SCRCPY_STUDIO_DEBUG_URL || 'http://127.0.0.1:9222'}/json`)).json()
-  const target = targets.find((item) => item.type === 'page' && item.title.replace(/&#39;/g, "'") === "Pepperon's GUI")
-  assert(target, "Start Pepperon's GUI with npm run start:debug first")
+  const target = targets.find((item) => item.type === 'page' && item.title.replace(/&#39;/g, "'") === "Pepperon GUI")
+  assert(target, "Start Pepperon GUI with npm run start:debug first")
   const socket = new WebSocket(target.webSocketDebuggerUrl)
   await new Promise((resolve, reject) => {
     socket.addEventListener('open', resolve, { once: true })
@@ -59,7 +59,9 @@ async function main() {
     await send('Emulation.setDeviceMetricsOverride', {width:1280,height:844,deviceScaleFactor:1,mobile:false})
     await evaluate(`localStorage.removeItem(${JSON.stringify(onboardingKey)}); location.reload()`)
     await delay(150)
-    await wait(`Boolean(document.querySelector('.startup-loader .loader-cat'))`, 'Pepperon startup animation')
+    await wait(`Boolean(document.querySelector('.startup-loader .loader-mascot img'))`, 'Pepperon startup animation')
+    assert.equal(await evaluate(`document.querySelectorAll('.startup-loader .loader-steps li').length`), 3, 'Startup checklist is missing')
+    assert(await evaluate(`document.querySelector('.startup-loader [role="progressbar"]')?.hasAttribute('aria-valuenow')`), 'Startup progress is not exposed')
     assert(!(await evaluate(`Boolean(document.querySelector('.startup-loader .squish-hand'))`)), 'Startup loader still renders the removed hands')
     assert(await evaluate(`document.querySelector('.startup-loader').getAttribute('role') === 'status'`), 'Startup loader is not announced')
     await wait(`!document.querySelector('.startup-loader')`, 'Startup animation completion')
@@ -123,7 +125,7 @@ async function main() {
     assert(await evaluate(`document.querySelector('.guide-help details').open`), 'Troubleshooting accordion did not open')
     await click('.guide-help summary')
     if (exerciseLinks) {
-      const destinations = { studio:"Pepperon's GUI", video:'Video studio', audio:'Audio room', recording:'Recording booth', profiles:'Profiles', appearance:'Appearance', control:'Control deck', display:'Display & window', options:'Every command' }
+      const destinations = { studio:"Pepperon GUI", video:'Video studio', audio:'Audio room', recording:'Recording booth', profiles:'Profiles', appearance:'Appearance', control:'Control deck', display:'Display & window', options:'Every command' }
       assert.equal(await evaluate(`new Set([...document.querySelectorAll('[data-guide-destination]')].map(e=>e.dataset.guideDestination)).size`), Object.keys(destinations).length)
       for (const [page, title] of Object.entries(destinations)) {
         await click(`[data-guide-destination="${page}"]`)
@@ -259,9 +261,9 @@ async function main() {
     await evaluate(`localStorage.setItem(${JSON.stringify(onboardingKey)},'seen'); document.querySelector('.tour-close')?.click()`)
     await wait(`!document.querySelector('.startup-loader')`, 'Startup animation completion')
     await nav('Studio')
-    assert.equal(await evaluate('document.title'), "Pepperon's GUI")
-    assert.equal(await evaluate(`document.querySelector('.dashboard-header h1').textContent`), "Pepperon's GUI")
-    assert.equal(await evaluate(`document.querySelector('.sidebar-brand strong').textContent`), "Pepperon's")
+    assert.equal(await evaluate('document.title'), "Pepperon GUI")
+    assert.equal(await evaluate(`document.querySelector('.dashboard-header h1').textContent`), "Pepperon GUI")
+    assert.equal(await evaluate(`document.querySelector('.sidebar-brand strong').textContent`), "Pepperon")
     for (const width of [1536, 1280, 1024, 390]) {
       await send('Emulation.setDeviceMetricsOverride', { width, height:950, deviceScaleFactor:1, mobile:false })
       await delay(150)

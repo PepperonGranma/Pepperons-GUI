@@ -1,6 +1,15 @@
 // Parser facts, not hardware recommendations. See docs/COMMAND-CONSTRAINTS.md.
 // Keep this dependency-free module shared by Electron and the command cards.
-export const CONSTRAINT_VERSION = '4.1'
+// Releases whose desktop CLI parser has been audited against this table. 5.0 and
+// 5.0.1 changed cli.c, str.c and options.c only to add --hwdec (an enumeration).
+export const AUDITED_VERSIONS = ['4.1', '5.0', '5.0.1']
+export const CONSTRAINT_VERSION = AUDITED_VERSIONS.at(-1)
+
+// '5.0.0' and '5.0' name the same release.
+export function auditedVersion(runtimeVersion = '') {
+  const normalized = String(runtimeVersion).trim().replace(/^v/, '').replace(/(\.\d+)\.0$/, '$1')
+  return AUDITED_VERSIONS.includes(normalized) ? normalized : ''
+}
 const integer = (min, max, unit, rest = {}) => ({ integer: true, min, max, unit, ...rest })
 const orientations = ['0', '90', '180', '270', 'flip0', 'flip90', 'flip180', 'flip270']
 const bitrate = defaultValue => integer(0, 2147483647, 'bit/s', {
@@ -34,10 +43,11 @@ export const PARSER_CONSTRAINTS = {
 }
 
 export function constraintsFor(name, runtimeVersion = '') {
-  // Do not present 4.1's limits as verified facts for an unreviewed runtime.
-  if (runtimeVersion && !/^4\.1(?:\.0)?$/.test(runtimeVersion)) return undefined
+  // Do not present audited limits as verified facts for an unreviewed runtime.
+  const audited = auditedVersion(runtimeVersion)
+  if (runtimeVersion && !audited) return undefined
   const constraints = PARSER_CONSTRAINTS[name]
-  return constraints ? { ...constraints, sourceVersion: CONSTRAINT_VERSION, referenceOnly: !runtimeVersion } : undefined
+  return constraints ? { ...constraints, sourceVersion: audited || CONSTRAINT_VERSION, referenceOnly: !runtimeVersion } : undefined
 }
 
 export function withConstraints(option, runtimeVersion = '') {
@@ -100,4 +110,18 @@ export function validateConstraint(value, constraints) {
     }
   }
   return ''
+}
+
+// Compares dotted release numbers such as "5.0.1" and "4.1". Anything that is not
+// purely numeric (an unknown or development build) is never reported as outdated.
+export function isNewerVersion(candidate, current) {
+  const parse = (value) => /^\d+(\.\d+)*$/.test(String(value).trim()) ? String(value).trim().split('.').map(Number) : null
+  const next = parse(candidate)
+  const now = parse(current)
+  if (!next || !now) return false
+  for (let index = 0; index < Math.max(next.length, now.length); index += 1) {
+    const difference = (next[index] || 0) - (now[index] || 0)
+    if (difference !== 0) return difference > 0
+  }
+  return false
 }

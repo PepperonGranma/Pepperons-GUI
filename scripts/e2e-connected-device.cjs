@@ -20,8 +20,8 @@ async function waitFor(evaluate, expression, label, timeout = WAIT_MS) {
 
 async function main() {
   const targets = await (await fetch(`${DEBUG_URL}/json`)).json();
-  const target = targets.find((item) => item.type === 'page' && item.title.replace(/&#39;/g, "'") === "Pepperon's GUI");
-  assert(target?.webSocketDebuggerUrl, "The Pepperon's GUI renderer is not available");
+  const target = targets.find((item) => item.type === 'page' && item.title.replace(/&#39;/g, "'") === "Pepperon GUI");
+  assert(target?.webSocketDebuggerUrl, "The Pepperon GUI renderer is not available");
 
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
@@ -147,7 +147,7 @@ async function main() {
       resolution: text.match(/\\d+ × \\d+/)?.[0] || null,
     };
   })()`);
-  assert(deviceSummary.title === "Pepperon's GUI", 'Unexpected renderer title');
+  assert(deviceSummary.title === "Pepperon GUI", 'Unexpected renderer title');
   assert(deviceSummary.runtime, 'The scrcpy runtime version was not available');
   assert(deviceSummary.android, 'Android capability metadata was not rendered');
   assert(deviceSummary.resolution, 'Display capability metadata was not rendered');
@@ -266,6 +266,7 @@ async function main() {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
       setter.call(input, value);
       input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
     };
     setInput('Max FPS', '90');
     setInput('Bitrate', '12M');
@@ -316,6 +317,7 @@ async function main() {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
       setter.call(input, value);
       input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
     };
     setInput('Max FPS', ${JSON.stringify('PLACEHOLDER_FPS')});
     setInput('Bitrate', ${JSON.stringify('PLACEHOLDER_BITRATE')});

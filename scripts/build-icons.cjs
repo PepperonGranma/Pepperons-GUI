@@ -1,4 +1,5 @@
-// Export the existing CSS CatMark, rather than redraw or replace its visual identity.
+// Export the project mark (src/assets/pepperon.webp) to the Windows icon formats.
+// The drawing is used as is: scaled to fit, never redrawn, recoloured or cropped.
 // Run with npm run build:icons. The committed assets let normal builds stay offline.
 const { app, BrowserWindow } = require('electron')
 const assert = require('node:assert/strict')
@@ -7,36 +8,26 @@ const path = require('node:path')
 
 const root = path.resolve(__dirname, '..')
 const output = path.join(root, 'build')
+const source = path.join(root, 'src', 'assets', 'pepperon.webp')
 // Deterministic software rasterization also works on headless Windows build hosts.
 app.disableHardwareAcceleration()
 // The exporter must never open or modify the user's GUI profile.
 app.setPath('userData', path.join(root, '.cache', 'icon-export'))
 
 app.whenReady().then(async () => {
-  const css = fs.readFileSync(path.join(root, 'src/styles.css'), 'utf8')
-  const appSource = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8')
-  const themeSource = fs.readFileSync(path.join(root, 'src/options.ts'), 'utf8')
-  const catCss = css.slice(css.indexOf('.cat-mark {'), css.indexOf('\n.sidebar {'))
-  assert(catCss.startsWith('.cat-mark {') && catCss.includes('.cat-face b'), 'CatMark styles were not found')
-  const markup = appSource.match(/return <div className=\{`cat-mark[^\n]+?(<span className="cat-ear[^\n]+?)<\/div>/)?.[1]
-  assert(markup, 'CatMark markup was not found')
-  const defaultTheme = themeSource.slice(themeSource.indexOf('export const DEFAULT_THEME'))
-  const accent = defaultTheme.match(/accent: '(#[a-f\d]{6})'/i)?.[1]
-  const mint = defaultTheme.match(/mint: '(#[a-f\d]{6})'/i)?.[1]
-  assert(accent && mint, 'Default brand colors were not found')
-  const htmlMarkup = markup.replace(/className=/g, 'class=').replace(/<(span|i|b)([^>]*?)\s*\/>/g, '<$1$2></$1>')
+  const image = fs.readFileSync(source)
+  assert(image.subarray(0, 4).toString('latin1') === 'RIFF' && image.subarray(8, 12).toString('latin1') === 'WEBP', 'The project mark is not a WebP image')
   const window = new BrowserWindow({
     width: 512, height: 512, useContentSize: true, show: false, frame: false,
     transparent: true, backgroundColor: '#00000000',
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   })
-  await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>
-    *{box-sizing:border-box} html,body{margin:0;width:512px;height:512px;background:transparent;overflow:hidden}
-    body{display:grid;place-items:center;--accent:${accent};--mint:${mint}}
-    ${catCss}
-    .cat-mark{transform:scale(8);transform-origin:center}
-  </style></head><body><div class="cat-mark">${htmlMarkup}</div></body></html>`)}`)
-  await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><style>
+    html,body{margin:0;width:512px;height:512px;background:transparent;overflow:hidden}
+    img{display:block;width:512px;height:512px;object-fit:contain;image-rendering:auto}
+  </style></head><body><img id="mark" src="data:image/webp;base64,${image.toString('base64')}"></body></html>`)}`)
+  const natural = await window.webContents.executeJavaScript(`(async () => { const mark = document.getElementById('mark'); await mark.decode(); await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); return [mark.naturalWidth, mark.naturalHeight] })()`)
+  assert(natural[0] > 0 && natural[1] > 0, 'The project mark could not be decoded')
   const captured = await window.webContents.capturePage({ x: 0, y: 0, width: 512, height: 512 }, { stayHidden: true, stayAwake: true })
   assert(!captured.isEmpty(), 'Icon export produced an empty image')
   const master = captured.resize({ width: 512, height: 512, quality: 'best' })
@@ -59,7 +50,7 @@ app.whenReady().then(async () => {
   fs.mkdirSync(output, { recursive: true })
   fs.writeFileSync(path.join(output, 'icon.png'), master.toPNG())
   fs.writeFileSync(path.join(output, 'icon.ico'), Buffer.concat([header, ...images]))
-  console.log(`Exported existing CatMark: 512px PNG and ICO sizes ${sizes.join(', ')}`)
+  console.log(`Exported the project mark (${natural.join('x')} source): 512px PNG and ICO sizes ${sizes.join(', ')}`)
   window.destroy()
   app.quit()
 }).catch(error => { console.error(error); app.exit(1) })

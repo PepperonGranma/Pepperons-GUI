@@ -35,6 +35,8 @@ async function main() {
   const bitrate = constraintsFor('--video-bit-rate', '4.1')
   assert.equal(allowedDescription(bitrate), '0 – 2,147,483,647 bit/s')
   assert.equal(constraintsFor('--max-size', '4.2'), undefined, '4.1 metadata leaked to an unreviewed runtime')
+  assert.equal(constraintsFor('--max-size', '5.1'), undefined, 'Audited metadata leaked to an unreviewed runtime')
+  assert.equal(constraintsFor('--max-size', '5.0.1').max, 65535, 'The audited 5.0.1 runtime lost its parser metadata')
   assert.equal(constraintsFor('--max-fps', '4.1'), undefined, 'An invented max-fps bound returned')
   const fromHelp = withConstraints({ name: '--max-size', description: 'Limit dimensions. Default is 0 (unlimited).', source: 'runtime' }, '4.1')
   assert.equal(fromHelp.constraints.defaultValue, '0 (unlimited)')

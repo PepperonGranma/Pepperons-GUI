@@ -18,7 +18,7 @@ const files = asar.listPackage(archive).map(file => file.slice(1)).filter(file =
 assert(files.length > 0, 'The application archive is empty')
 const forbidden = /(^|[\\/])(src|scripts|tests?|docs|\.git|\.cache|screenshots?)([\\/]|$)|\.(map|log|mp4|mkv|m4a|ts|tsx)$/i
 assert.deepEqual(files.filter(file => forbidden.test(file)), [], 'Development files leaked into the application archive')
-for (const file of ['electron/main.cjs', 'electron/preload.cjs', 'electron/command-constraints.mjs', 'dist/index.html', ...fs.readdirSync(path.join(root, 'dist/assets')).map(file => `dist/assets/${file}`)]) {
+for (const file of ['electron/main.cjs', 'electron/preload.cjs', 'electron/command-constraints.mjs', 'electron/scrcpy-args.mjs', 'electron/device-parsers.mjs', 'dist/index.html', ...fs.readdirSync(path.join(root, 'dist/assets')).map(file => `dist/assets/${file}`)]) {
   assert(asar.extractFile(archive, path.normalize(file)).equals(fs.readFileSync(path.join(root, file))), `Stale packaged file: ${file}`)
 }
 assert(fs.readFileSync(path.join(unpacked, 'resources/icon.ico')).equals(iconBytes), 'Runtime icon differs from the source icon')

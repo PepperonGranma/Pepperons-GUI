@@ -9,7 +9,7 @@ const { setTimeout: delay } = require('node:timers/promises')
 const root = path.resolve(__dirname, '..')
 
 async function checkMainLifecycle(acquired) {
-  const windows = [], handlers = []
+  const windows = [], handlers = [], trays = []
   const stdout = new EventEmitter(), stderr = new EventEmitter()
   const app = new EventEmitter()
   Object.assign(app, {
@@ -38,8 +38,15 @@ async function checkMainLifecycle(acquired) {
     loadURL() { this.loads++ }
     static getAllWindows() { return windows }
   }
+  class FakeTray extends EventEmitter {
+    constructor() { super(); trays.push(this) }
+    setToolTip() {}
+    setContextMenu() {}
+    displayBalloon() {}
+    destroy() { this.destroyed = true }
+  }
   const mockRequire = name => {
-    if (name === 'electron') return { app, BrowserWindow: FakeWindow, dialog: {}, shell: {}, ipcMain: { handle: name => handlers.push(name) } }
+    if (name === 'electron') return { app, BrowserWindow: FakeWindow, dialog: {}, shell: {}, Menu: { buildFromTemplate: template => template }, Tray: FakeTray, ipcMain: { handle: name => handlers.push(name) } }
     if (name === 'node:fs') return { ...fs, mkdirSync() {} }
     return createRequire(path.join(root, 'electron/main.cjs'))(name)
   }
@@ -81,7 +88,7 @@ async function main() {
 
   const debugUrl = process.env.SCRCPY_STUDIO_DEBUG_URL || 'http://127.0.0.1:9222'
   const pages = await (await fetch(`${debugUrl}/json`)).json()
-  const page = pages.find(p => p.type === 'page' && p.title.replace(/&#39;/g, "'") === "Pepperon's GUI")
+  const page = pages.find(p => p.type === 'page' && p.title.replace(/&#39;/g, "'") === "Pepperon GUI")
   assert(page, 'Launch the updated GUI with remote debugging before this test')
   const socket = new WebSocket(page.webSocketDebuggerUrl)
   await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }) })

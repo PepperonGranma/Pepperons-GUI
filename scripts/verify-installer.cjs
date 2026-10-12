@@ -50,7 +50,7 @@ async function main() {
     const plugins = outerFiles.filter(file => /\.dll$/i.test(file)).map(file => path.basename(file)).sort()
     assert.deepEqual(plugins, ['SpiderBanner.dll', 'System.dll', 'nsExec.dll', 'nsis7z.dll'], 'Unexpected installer plug-in set')
     const appArchive = outerFiles.find(file => /app-64\.7z$/i.test(file))
-    const uninstaller = outerFiles.find(file => /Uninstall Pepperon's GUI\.exe$/i.test(file))
+    const uninstaller = outerFiles.find(file => /Uninstall Pepperon GUI\.exe$/i.test(file))
     assert(appArchive && uninstaller, 'Installer payload or uninstaller is missing')
 
     const app = path.join(work, 'app')

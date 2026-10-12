@@ -1,6 +1,6 @@
 # Windows releases
 
-Pepperon's GUI keeps its existing `studio.scrcpy.desktop` app ID and
+Pepperon GUI keeps its existing `studio.scrcpy.desktop` app ID and
 `scrcpy-studio` user-data/local-storage identifiers. Do not rename these during
 branding or packaging changes: they preserve installed upgrades and saved profiles.
 
@@ -11,6 +11,7 @@ Use Node.js 22.12+ (Node 24 is used for release validation), then:
 ```powershell
 npm ci
 npm run build
+npm test
 npm run test:installer-shell
 npm run dist
 npm run test:installer-package
@@ -21,11 +22,18 @@ The release target is Windows x64 NSIS. Keep the old release outside the output
 directory, or remove only the validated generated `release` directory, before
 creating final artifacts. Never clear the user's AppData to test an upgrade.
 
-`build/icon.ico` and `build/icon.png` are exports of the existing `CatMark`
-markup/styles and default theme, not a replacement design. Regenerate them with
-`npm run build:icons` after an intentional source-icon change. The icon exporter
+`build/icon.ico` and `build/icon.png` are exports of the project mark,
+`src/assets/pepperon.webp`, scaled to fit and otherwise unchanged. The same file is
+the in-app mascot. Regenerate the icons with `npm run build:icons` after an
+intentional change to that drawing. The icon exporter
 uses an isolated `.cache/icon-export` profile, never the user's GUI data. Only
 the ICO is copied to packaged runtime resources; exporter source and PNG stay out.
+
+Pushing a `v<version>` tag also runs `.github/workflows/release.yml`, which repeats
+these steps on a clean Windows runner and attaches the installer and its SHA-256 to a
+**draft** release. Publish the draft only after the suites below pass against it.
+If a release for that tag already exists — the maintainer published the locally built
+and tested installer — the workflow only repeats the build as a check and uploads nothing.
 
 ## Smoke and regression tests
 

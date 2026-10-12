@@ -1,0 +1,462 @@
+/*
+ * Visual refresh layer. Loaded after styles.css.
+ *
+ * Rules here only touch type, colour, depth and motion — never box sizes — so the
+ * layout contracts checked by scripts/e2e-interface.cjs keep holding. Everything is
+ * derived from the user's theme variables (--accent, --mint, --pink, --surface,
+ * --radius) so custom themes and the light mode stay coherent.
+ */
+
+:root {
+  /* Fonts that ship with Windows 10/11: no bundled or remote font files. */
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.app {
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --glow: color-mix(in srgb, var(--accent) 45%, transparent);
+  --card-fill: linear-gradient(180deg, color-mix(in srgb, var(--panel) 95%, #fff), var(--panel) 42%);
+  --card-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 22px 44px -30px rgba(0, 0, 0, .9);
+  --card-border-hover: color-mix(in srgb, var(--accent) 30%, var(--line));
+  --hero-ink: color-mix(in srgb, var(--accent) 68%, #fff);
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app.theme-light {
+  --glow: color-mix(in srgb, var(--accent) 34%, transparent);
+  --card-fill: var(--panel);
+  --card-shadow: 0 1px 2px rgba(24, 24, 27, .05), 0 18px 36px -28px rgba(24, 24, 27, .4);
+  --hero-ink: var(--accent-readable);
+}
+
+.app ::selection { color: var(--text); background: color-mix(in srgb, var(--accent) 42%, transparent); }
+
+/* ── Canvas ─────────────────────────────────────────────────────────────── */
+
+/* The backdrop sits behind the scrolling page; only transforms animate, so the
+   colour wash costs nothing while it drifts. --fx (0–1) is the Glow setting. */
+.app { --canvas: #0e0e10; }
+.app.theme-light { --canvas: #f3f3f5; }
+.app .canvas { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.app .main-content { position: relative; z-index: 1; background: transparent; }
+.backdrop { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: var(--canvas); }
+.backdrop i { position: absolute; border-radius: 50%; opacity: var(--fx, .6); will-change: transform; }
+.backdrop i:nth-child(1) {
+  width: 78vmax; height: 78vmax; left: -30vmax; top: -46vmax;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 30%, transparent), transparent 62%);
+}
+.backdrop i:nth-child(2) {
+  width: 62vmax; height: 62vmax; right: -24vmax; top: -38vmax;
+  background: radial-gradient(circle, color-mix(in srgb, var(--pink) 22%, transparent), transparent 62%);
+}
+.backdrop i:nth-child(3) {
+  width: 56vmax; height: 56vmax; left: 24%; bottom: -46vmax;
+  background: radial-gradient(circle, color-mix(in srgb, var(--mint) 16%, transparent), transparent 62%);
+}
+.app.backdrop-none .backdrop i { display: none; }
+.app.backdrop-aurora.motion-full .backdrop i:nth-child(1) { animation: fx-drift-a 34s ease-in-out infinite alternate; }
+.app.backdrop-aurora.motion-full .backdrop i:nth-child(2) { animation: fx-drift-b 41s ease-in-out infinite alternate; }
+.app.backdrop-aurora.motion-full .backdrop i:nth-child(3) { animation: fx-drift-c 47s ease-in-out infinite alternate; }
+@keyframes fx-drift-a { to { transform: translate3d(16vmax, 9vmax, 0) scale(1.14); } }
+@keyframes fx-drift-b { to { transform: translate3d(-18vmax, 12vmax, 0) scale(.9); } }
+@keyframes fx-drift-c { to { transform: translate3d(-12vmax, -11vmax, 0) scale(1.2); } }
+
+/* The "Subtle background pattern" switch: a faint dot grid over the canvas. */
+.app.has-pattern .backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(color-mix(in srgb, var(--text) 9%, transparent) 1px, transparent 1.4px);
+  background-size: 22px 22px;
+}
+
+/* The whole page moves as one piece, so cards keep their relative positions. */
+.app .page { animation: refresh-page-in .3s var(--ease) both; }
+.app.motion-subtle .page { animation-name: refresh-page-fade; }
+/* The first-run tour measures its targets; keep them still while it is open. */
+.app:has(.first-run-tour) .page { animation-name: refresh-page-fade; }
+@keyframes refresh-page-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes refresh-page-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ── Type ───────────────────────────────────────────────────────────────── */
+
+.app :is(.dashboard-header h1, .page-header h1, .profile-hero h2, .empty-profiles h2) {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -.025em;
+}
+.app :is(.card-header h3, .device-primary h3, .guide-step h2) { font-family: var(--font-display); letter-spacing: -.01em; }
+.app :is(.spec strong, .capability-values strong, .session-panel strong, .command-stats, .activity-entry small) { font-variant-numeric: tabular-nums; }
+.app .page-badge { color: var(--hero-ink); }
+
+/* ── Sidebar and top bar ────────────────────────────────────────────────── */
+
+.app .sidebar {
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 34%);
+  border-right: 1px solid var(--line);
+}
+.app .sidebar nav button {
+  transition: color .16s var(--ease), background .16s var(--ease), box-shadow .16s var(--ease);
+}
+.app .sidebar nav button > svg { transition: transform .2s var(--ease), color .16s var(--ease); }
+.app .sidebar nav button:hover > svg { transform: scale(1.08); }
+.app .sidebar nav button.active {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 26%, transparent), color-mix(in srgb, var(--accent) 7%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.app .sidebar-brand .cat-mark { box-shadow: 0 0 0 1px var(--mint), 0 8px 22px -8px var(--glow); }
+.app .sidebar nav button kbd {
+  position: absolute;
+  right: 8px;
+  padding: 1px 5px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  font: 600 10px var(--font-mono);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .16s var(--ease);
+}
+.app .sidebar nav button:is(:hover, :focus-visible) kbd { opacity: 1; }
+
+.app .topbar { box-shadow: 0 14px 30px -26px rgba(0, 0, 0, .9); }
+.app :is(.input-wrap, .select-wrap, .path-field, .global-search) {
+  transition: border-color .16s var(--ease), box-shadow .16s var(--ease), background .16s var(--ease);
+}
+.app :is(.input-wrap, .select-wrap, .path-field, .global-search):hover:not(:focus-within) {
+  border-color: color-mix(in srgb, var(--text) 22%, transparent);
+}
+
+/* ── Surfaces ───────────────────────────────────────────────────────────── */
+
+.app :is(.section-card:not(.accent-note), .profile-card, .guide-step, .guide-shortcuts button) {
+  background-image: var(--card-fill);
+  box-shadow: var(--card-shadow);
+  transition: border-color .2s var(--ease), box-shadow .2s var(--ease);
+}
+.app :is(.section-card, .profile-card, .guide-step):hover { border-color: var(--card-border-hover); }
+.app .card-header { border-bottom-color: color-mix(in srgb, var(--line) 70%, transparent); }
+.app .card-icon {
+  background: linear-gradient(140deg, color-mix(in srgb, var(--accent) 24%, transparent), color-mix(in srgb, var(--pink) 10%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.app .option-row { transition: border-color .16s var(--ease), background .16s var(--ease); }
+.app .option-row:hover:not(.unavailable) { border-color: var(--card-border-hover); }
+
+/* ── Dashboard hero ─────────────────────────────────────────────────────── */
+
+.app .dashboard-header {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: var(--radius);
+  background:
+    radial-gradient(520px 180px at 0% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 72%),
+    linear-gradient(110deg, color-mix(in srgb, var(--accent) 10%, var(--panel)), color-mix(in srgb, var(--pink) 5%, var(--panel)) 58%, var(--panel));
+  box-shadow: var(--card-shadow);
+}
+.app .dashboard-header::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -60% -8% auto auto;
+  width: 340px;
+  height: 340px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--pink) 16%, transparent), transparent 66%);
+  pointer-events: none;
+}
+.app .dashboard-header h1 { font-size: 26px; }
+.app .dashboard-header p { font-size: 13px; }
+.app .dashboard-header .kicker { color: var(--hero-ink); }
+
+.app .session-status { backdrop-filter: blur(6px); }
+.app .session-status.status-live i { animation: refresh-live-pulse 1.8s ease-out infinite; }
+@keyframes refresh-live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(66, 211, 138, .55); }
+  70%, 100% { box-shadow: 0 0 0 7px rgba(66, 211, 138, 0); }
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+
+.app .primary:not(.stop) {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 86%, #fff), var(--accent) 52%, color-mix(in srgb, var(--accent) 80%, var(--pink)));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 12px 26px -12px var(--glow);
+}
+.app .primary { transition: transform .14s var(--ease), filter .14s var(--ease), box-shadow .2s var(--ease), background .14s var(--ease); }
+.app .primary:hover:not(:disabled) { filter: brightness(1.07) saturate(1.05); }
+.app .primary:not(.stop):hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .32), 0 16px 32px -12px var(--glow); }
+.app .primary:active:not(:disabled) { transform: scale(.985); }
+.app .primary:disabled { box-shadow: none; filter: saturate(.6); }
+.app :is(.secondary, .icon-button, .text-button) { transition: color .16s var(--ease), background .16s var(--ease), border-color .16s var(--ease); }
+.app :is(.preset-compact, .value-shortcuts, .segmented, .category-scroll) button { transition: color .16s var(--ease), background .16s var(--ease), border-color .16s var(--ease), box-shadow .16s var(--ease); }
+
+/* ── Details ────────────────────────────────────────────────────────────── */
+
+.app .command-preview { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03), inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent); }
+.app .empty-state > span {
+  background: linear-gradient(140deg, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--pink) 8%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.app .toast { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 18px 44px -14px rgba(0, 0, 0, .6); }
+.app .profile-hero { box-shadow: var(--card-shadow); }
+
+/* ── Light theme: secondary text that fell below 4.5:1 ──────────────────── */
+
+.theme-light .nav-eyebrow { color: #6b6b75; }
+.theme-light .global-search kbd { color: #5f5f69; }
+.theme-light .session-status.status-offline { color: #5f5f69; }
+.theme-light .text-button { color: #5f5f69; }
+.theme-light .text-button:hover { color: #18181b; }
+.theme-light .live-indicator { color: #1c7f52; }
+.theme-light .segmented button:not(.active) { color: #66666f; }
+.theme-light .accent-note p { color: #55555f; }
+.theme-light .options-meta { color: #66666f; }
+.theme-light .color-field small { color: #66666f; }
+.theme-light .command-constraints .constraint-source { color: color-mix(in srgb, var(--pink) 58%, #000); }
+.theme-light :is(.input-wrap em, .select-wrap svg, .latency-scale) { color: #667080; }
+
+
+/* At-a-glance setup chips in the dashboard hero. */
+.hero-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.hero-chip {
+  min-width: 0;
+  max-width: 100%;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  border-radius: 999px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 62%, transparent);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hero-chip strong { color: var(--text); font-weight: 600; }
+.hero-chip svg { width: 13px; height: 13px; flex: 0 0 auto; color: var(--hero-ink); }
+.hero-chip.recording svg { color: #ef5b72; }
+
+/* Spec labels never run into their neighbours. */
+.app .dense-specs { column-gap: 12px; }
+.app .spec span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ════ Effects: motion, 3D and pointer interaction ════════════════════════
+   All of it is governed by Appearance → Motion & effects:
+     .motion-full | .motion-subtle | .motion-off   animation level
+     .fx-tilt                                      3D tilt toward the pointer
+     .fx-spotlight                                 light following the pointer
+     --fx                                          glow strength, 0–1
+   The pointer position arrives as custom properties from src/interactions.ts. */
+
+@property --fx-spin { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+
+/* Pointer spotlight: an extra background layer, so no element is added. */
+.app.fx-spotlight :is(.section-card:not(.accent-note), .profile-card, .guide-step) {
+  background-image:
+    radial-gradient(460px circle at var(--mx, -999px) var(--my, -999px), color-mix(in srgb, var(--accent) calc(var(--fx, .6) * 13%), transparent), transparent 62%),
+    var(--card-fill);
+}
+.app.fx-spotlight .option-row {
+  background-image: radial-gradient(380px circle at var(--mx, -999px) var(--my, -999px), color-mix(in srgb, var(--accent) calc(var(--fx, .6) * 11%), transparent), transparent 62%);
+}
+
+/* Hero: a slow light travelling around the border, and orbs with parallax. */
+.app .dashboard-header::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(from var(--fx-spin), transparent 0 62%, var(--accent) 80%, var(--pink) 90%, transparent 100%);
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  opacity: calc(var(--fx, .6) * .95);
+  pointer-events: none;
+}
+.app.motion-full .dashboard-header::before { animation: fx-spin 9s linear infinite; }
+@keyframes fx-spin { to { --fx-spin: 360deg; } }
+.app .dashboard-header::after {
+  translate: calc(var(--tx, 0) * -26px) calc(var(--ty, 0) * -16px);
+  transition: translate .5s var(--ease);
+}
+
+/* Hero chips are shortcuts to the page that owns each value. */
+.app button.hero-chip { cursor: pointer; transition: color .16s var(--ease), border-color .16s var(--ease), background .16s var(--ease), translate .16s var(--ease); }
+.app button.hero-chip:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); translate: 0 -1px; }
+
+/* 3D device: the stage supplies perspective, the phone leans toward the pointer.
+   `rotate` is separate from `transform`, so the existing idle/live animations keep running. */
+.app.fx-tilt .connection-stage { perspective: 720px; }
+.app.fx-tilt .connection-phone {
+  rotate: var(--tilt-ax, 0) var(--tilt-ay, 1) 0 var(--tilt-deg, 0deg);
+  box-shadow:
+    calc(var(--tx, 0) * -14px) calc(18px + var(--ty, 0) * -10px) 36px rgba(0, 0, 0, .5),
+    0 0 calc(var(--fx, .6) * 34px) color-mix(in srgb, var(--accent) 26%, transparent);
+  transition: rotate .22s ease-out, transform .45s ease, border-color .3s ease, box-shadow .22s ease-out;
+}
+.app.fx-tilt .connection-stage:not(:hover) .connection-phone { transition: rotate .7s var(--ease), transform .45s ease, border-color .3s ease, box-shadow .7s var(--ease); }
+.app.fx-tilt .connection-screen .cat-mark { translate: calc(var(--tx, 0) * 5px) calc(var(--ty, 0) * 5px); transition: translate .22s ease-out; }
+.app.fx-tilt .connection-rings { translate: calc(var(--tx, 0) * -8px) calc(var(--ty, 0) * -6px); transition: translate .4s var(--ease); }
+/* Moving glare across the glass. */
+.app.fx-tilt .connection-screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--gx, 28%) var(--gy, 16%), rgba(255, 255, 255, .42), transparent 58%);
+  mix-blend-mode: soft-light;
+  pointer-events: none;
+}
+.app .connection-stage:active .connection-phone { scale: .975; }
+.app .connection-phone { transition: transform .45s ease, border-color .3s ease, box-shadow .3s ease, scale .18s var(--ease); }
+
+/* Other showpieces. */
+.app.fx-tilt :is(.signal-art, .window-preview-card .card-content, .theme-preview-card .card-content) { perspective: 900px; }
+.app.fx-tilt :is(.signal-phone, .mini-window, .theme-swatch-preview) {
+  rotate: var(--tilt-ax, 0) var(--tilt-ay, 1) 0 var(--tilt-deg, 0deg);
+  transition: rotate .22s ease-out, box-shadow .3s ease;
+}
+.app.fx-tilt :is(.signal-art, .mini-window, .theme-swatch-preview):not(:hover),
+.app.fx-tilt .signal-art:not(:hover) .signal-phone { transition: rotate .7s var(--ease); }
+.app.fx-tilt .profile-art .cat-mark { translate: calc(var(--tx, 0) * 12px) calc(var(--ty, 0) * 9px); transition: translate .3s var(--ease); }
+.app.fx-tilt .profile-art::before { translate: calc(var(--tx, 0) * -16px) calc(var(--ty, 0) * -12px); transition: translate .5s var(--ease); }
+.app.fx-tilt .recipe-art > span { translate: calc(var(--tx, 0) * 10px) calc(var(--ty, 0) * 7px); transition: translate .3s var(--ease); }
+
+/* Primary button: sheen on hover, ripple from the press point. */
+.app .primary { position: relative; overflow: hidden; isolation: isolate; }
+.app .primary:not(.stop)::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, .34) 50%, transparent 70%);
+  translate: -120% 0;
+  pointer-events: none;
+}
+.app:not(.motion-off) .primary:not(.stop):hover:not(:disabled)::before { translate: 120% 0; transition: translate .7s var(--ease); }
+.app .primary::after {
+  content: '';
+  position: absolute;
+  left: var(--px, 50%);
+  top: var(--py, 50%);
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .5);
+  opacity: 0;
+  pointer-events: none;
+}
+.app .primary[data-ripple='a']::after { animation: fx-ripple-a .55s ease-out; }
+.app .primary[data-ripple='b']::after { animation: fx-ripple-b .55s ease-out; }
+@keyframes fx-ripple-a { from { opacity: .55; scale: 1; } to { opacity: 0; scale: 26; } }
+@keyframes fx-ripple-b { from { opacity: .55; scale: 1; } to { opacity: 0; scale: 26; } }
+
+/* The stop state sits on a dark fill; the accent's ink colour can be dark too. */
+.app.theme-dark .session-button.stop { color: #f3f5f8; }
+
+/* A ready-to-start session button breathes; a live session orb gets a turning ring. */
+.app.motion-full .session-button:not(.stop):not(:disabled) { animation: fx-breathe 3.2s ease-in-out infinite; }
+@keyframes fx-breathe {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 12px 26px -12px var(--glow); }
+  50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 12px 34px -8px var(--glow), 0 0 0 4px color-mix(in srgb, var(--accent) calc(var(--fx, .6) * 22%), transparent); }
+}
+.app .session-orb.status-live { position: relative; }
+.app .session-orb.status-live::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: conic-gradient(from var(--fx-spin), transparent 0 55%, #42d38a 100%);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+  animation: fx-spin 2.4s linear infinite;
+  pointer-events: none;
+}
+
+/* Small physical touches. */
+.app .switch-row i b { transition: left .3s cubic-bezier(.34, 1.56, .64, 1), background .2s var(--ease), box-shadow .2s var(--ease); }
+.app .sidebar nav button.active::before { animation: fx-indicator .32s var(--ease); }
+@keyframes fx-indicator { from { scale: 1 0; opacity: 0; } to { scale: 1 1; opacity: 1; } }
+.app .toast { animation-timing-function: cubic-bezier(.34, 1.4, .64, 1); }
+.app.motion-full .page .section-card { animation: fx-card-in .5s var(--ease) both; }
+.app.motion-full .page .section-card:nth-child(2) { animation-delay: .04s; }
+.app.motion-full .page .section-card:nth-child(3) { animation-delay: .08s; }
+.app.motion-full .page .section-card:nth-child(4) { animation-delay: .12s; }
+.app.motion-full .page .section-card:nth-child(n + 5) { animation-delay: .16s; }
+/* Opacity only: staggered movement would misalign neighbouring cards mid-flight. */
+@keyframes fx-card-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Motion & effects card. */
+.app .appearance-layout > .effects-card { grid-column: 1 / -1; }
+.effects-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 24px; }
+.effects-grid .appearance-mode-label { display: block; margin-bottom: 14px; }
+.effects-grid .appearance-mode-label > span { display: block; margin-bottom: 7px; }
+.effects-grid .effect-presets { margin-bottom: 0; }
+.effects-grid .effect-presets button { flex: 1; }
+@media (max-width: 920px) {
+  .app .appearance-layout > .effects-card { grid-column: auto; }
+  .effects-grid { grid-template-columns: 1fr; }
+}
+
+/* Animation level: Off. Pointer tilt is switched off in script as well. */
+.app.motion-off *, .app.motion-off *::before, .app.motion-off *::after { animation: none !important; transition: none !important; }
+
+/* The operating system's reduced-motion preference overrides the setting. */
+@media (prefers-reduced-motion: reduce) {
+  .app *, .app *::before, .app *::after { animation: none !important; transition-duration: .001ms !important; }
+  .app.fx-tilt :is(.connection-phone, .signal-phone, .mini-window, .theme-swatch-preview) { rotate: none; }
+}
+
+/* Profile card actions share one height and one centre line. */
+.app .profile-actions { align-items: center; }
+.app .profile-actions > button { height: 30px; }
+.app .profile-actions > .icon-button.tiny { width: 30px; }
+.app .profile-actions > button:first-child { color: var(--accent-ink, #fff); }
+
+/* Runtime update notice: the same bar as first-time setup, with a flexible action row. */
+.app .runtime-setup-bar.update { display: flex; flex-wrap: wrap; }
+.app .runtime-setup-bar.update > div:nth-child(2) { flex: 1 1 240px; min-width: 0; }
+.app .runtime-setup-bar.update :is(.primary, .secondary) { width: auto; flex: 0 0 auto; }
+
+/* The "GUI" line under the name takes its hue from the Secondary accent but is
+   always mixed toward the text colour, so a very dark or very light accent
+   cannot make it disappear into the sidebar. */
+.app .sidebar-brand span { color: color-mix(in srgb, var(--mint) 45%, var(--text)); }
+
+/* Device-tailored setup suggestions on the Studio page. */
+.app .suggestions-card { margin-bottom: 12px; }
+.suggestion-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.suggestion {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in srgb, var(--text) 2.5%, transparent);
+  transition: border-color .16s var(--ease), background .16s var(--ease);
+}
+.suggestion:hover { border-color: var(--card-border-hover); }
+.suggestion.applied { border-color: color-mix(in srgb, var(--accent) 60%, transparent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.suggestion header { display: flex; align-items: flex-start; gap: 9px; }
+.suggestion-icon { width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 9px; color: var(--hero-ink); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.suggestion h4 { margin: 0; font: 700 14px var(--font-display); letter-spacing: -.01em; }
+.suggestion header p { margin: 2px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.suggestion code { align-self: flex-start; max-width: 100%; padding: 4px 8px; overflow: hidden; border-radius: 6px; color: var(--text); background: color-mix(in srgb, var(--text) 7%, transparent); font: 600 11px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.suggestion ul { flex: 1; display: grid; align-content: start; gap: 5px; margin: 0; padding: 0 0 0 15px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.suggestion small { color: var(--highlight-text); font-size: 11px; line-height: 1.4; }
+.suggestion .secondary { width: 100%; height: 32px; gap: 6px; }
+.suggestion.applied .secondary { opacity: 1; color: var(--hero-ink); border-color: transparent; background: transparent; cursor: default; }
+.suggestions-empty { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }

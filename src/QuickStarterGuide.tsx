@@ -57,7 +57,7 @@ export function QuickStarterGuide({ onNavigate, onStartTour }: { onNavigate(page
   return <article className="page starter-guide" aria-labelledby="starter-guide-title">
     <header className="page-header">
       <div className="page-icon"><Github aria-hidden="true" /></div>
-      <div><span className="kicker">GETTING STARTED</span><h1 id="starter-guide-title" ref={heading} tabIndex={-1}>Quick Starter Guide</h1><p>Your first session in Pepperon’s GUI, one step at a time.</p></div>
+      <div><span className="kicker">GETTING STARTED</span><h1 id="starter-guide-title" ref={heading} tabIndex={-1}>Quick Starter Guide</h1><p>Your first session in Pepperon GUI, one step at a time.</p></div>
     </header>
 
     <section className="guide-tour-banner">

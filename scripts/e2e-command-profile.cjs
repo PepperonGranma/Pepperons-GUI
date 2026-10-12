@@ -6,8 +6,8 @@ const STORAGE_KEYS = ['scrcpy-studio:config', 'scrcpy-studio:profiles', 'scrcpy-
 
 async function main() {
   const targets = await (await fetch(`${DEBUG_URL}/json`)).json()
-  const target = targets.find((item) => item.type === 'page' && item.title.replace(/&#39;/g, "'") === "Pepperon's GUI")
-  assert(target?.webSocketDebuggerUrl, "Start Pepperon's GUI with remote debugging first")
+  const target = targets.find((item) => item.type === 'page' && item.title.replace(/&#39;/g, "'") === "Pepperon GUI")
+  assert(target?.webSocketDebuggerUrl, "Start Pepperon GUI with remote debugging first")
 
   const socket = new WebSocket(target.webSocketDebuggerUrl)
   await new Promise((resolve, reject) => {
@@ -53,12 +53,21 @@ async function main() {
     await delay(120)
   }
   const setField = async (label, value) => {
-    assert(await evaluate(`(() => { const field=[...document.querySelectorAll('label.field')].find(e=>e.querySelector(':scope > span')?.textContent.trim()===${JSON.stringify(label)}); const input=field?.querySelector('input'); if(!input)return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(value)}); input.dispatchEvent(new Event('input',{bubbles:true})); return true })()`), `Missing field: ${label}`)
+    assert(await evaluate(`(() => { const field=[...document.querySelectorAll('label.field')].find(e=>e.querySelector(':scope > span')?.textContent.trim()===${JSON.stringify(label)}); const input=field?.querySelector('input'); if(!input)return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(value)}); input.dispatchEvent(new Event('input',{bubbles:true})); input.dispatchEvent(new FocusEvent('focusout',{bubbles:true})); return true })()`), `Missing field: ${label}`)
     await delay(350)
   }
   const clickProfileAction = async (name, action) => {
     assert(await evaluate(`(() => { const card=[...document.querySelectorAll('.profile-card')].find(e=>e.querySelector('h3')?.textContent===${JSON.stringify(name)}); const button=[...(card?.querySelectorAll('button')||[])].find(e=>e.textContent.trim()===${JSON.stringify(action)} || e.getAttribute('aria-label')===${JSON.stringify(action)}); if(!button)return false; button.click(); return true })()`), `Missing ${action} for ${name}`)
     await delay(150)
+  }
+  const renameProfile = async (name, next) => {
+    await clickProfileAction(name, 'Rename')
+    assert(await evaluate(`(() => { const input=document.querySelector('.profile-rename-form input'); if(!input)return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(next)}); input.dispatchEvent(new Event('input',{bubbles:true})); input.form.requestSubmit(); return true })()`), `Missing rename editor for ${name}`)
+    await delay(150)
+  }
+  const cancelRename = async () => {
+    await evaluate(`document.querySelector('.profile-rename-form [aria-label="Cancel rename"]')?.click()`)
+    await delay(100)
   }
 
   await send('Runtime.enable')
@@ -82,7 +91,7 @@ async function main() {
       const kinds=runtime.options.reduce((counts,item)=>{counts[item.kind]=(counts[item.kind]||0)+1;return counts},{});
       return {runtimeVersion:runtime.installedVersion,runtimeCount:runtimeNames.length,runtimeNames,runtimeOptions:runtime.options,kinds,optionalValues:runtime.options.filter(item=>item.optionalValue).map(item=>item.name),rows};
     })()`)
-    assert.equal(audit.runtimeVersion, '4.1', 'Real-device audit expected the installed scrcpy 4.1 runtime')
+    assert(['4.1', '5.0', '5.0.1'].includes(audit.runtimeVersion), `Real-device audit expected an audited scrcpy runtime, found ${audit.runtimeVersion}`)
     assert(audit.runtimeCount >= 100, `Only ${audit.runtimeCount} runtime commands were parsed`)
     assert.equal(new Set(audit.rows.map((row) => row.name)).size, audit.rows.length, 'Duplicate commands were rendered')
     assert.deepEqual(audit.runtimeNames.filter((name) => !audit.rows.some((row) => row.name === name)), [], 'Installed runtime commands are missing from the GUI')
@@ -107,7 +116,7 @@ async function main() {
       const samples={
         '--angle':'-15.5','--audio-bit-rate':'96K','--audio-buffer':'40','--audio-codec':'aac','--audio-codec-options':'bitrate-mode:int=1','--audio-output-buffer':'12','--audio-source':'playback',
         '--background-color':'#123','--camera-ar':'sensor','--camera-facing':'front','--camera-fps':'30','--camera-id':'0','--camera-size':'1280x720','--camera-zoom':'1',
-        '--capture-orientation':'@90','--crop':'640:480:0:0','--display-id':'0','--display-ime-policy':'local','--display-orientation':'90','--gamepad':'uhid','--keyboard':'uhid',
+        '--capture-orientation':'@90','--crop':'640:480:0:0','--display-id':'0','--display-ime-policy':'local','--display-orientation':'90','--gamepad':'uhid','--hwdec':'disabled','--keyboard':'uhid',
         '--max-fps':'30','--max-size':'1280','--min-size-alignment':'2','--mouse':'uhid','--mouse-bind':'bhsn:++++','--new-display':'/240','--orientation':'90','--pause-on-exit':'if-error',
         '--port':'27183:27199','--push-target':'/sdcard/Download/','--record':'C:\\Pepperon Tests\\sample.mp4','--record-format':'mp4','--record-orientation':'90','--render-driver':'direct3d',
         '--render-fit':'letterbox','--screen-off-timeout':'30','--shortcut-mod':'lctrl,lsuper','--start-app':'com.android.settings','--tcpip':'127.0.0.1:5555','--time-limit':'2',
@@ -116,7 +125,8 @@ async function main() {
       };
       for (const name of names) {
         let row=rowFor(name);
-        if (!row || row.querySelector('.run-action') || name==='--serial') continue;
+        // Options the installed runtime does not have (for example --hwdec before 5.0) are shown but disabled.
+        if (!row || row.querySelector('.run-action') || name==='--serial' || row.classList.contains('unavailable')) continue;
         const checkbox=row.querySelector('input[type="checkbox"]');
         if (checkbox) {
           const original=checkbox.checked;
@@ -310,20 +320,22 @@ async function main() {
     await clickText('Save as new profile')
     await wait(`document.querySelectorAll('.profile-card').length===2`, 'second saved profile')
 
-    await evaluate(`window.prompt=()=> '   '`)
-    await clickProfileAction('Profile 2', 'Rename')
+    await renameProfile('Profile 2', '   ')
     assert(await evaluate(`document.body.innerText.includes('Profile name cannot be empty')`), 'Whitespace-only profile name did not show validation')
-    await evaluate(`window.prompt=()=> 'x'.repeat(65)`)
-    await clickProfileAction('Profile 2', 'Rename')
+    assert(await evaluate(`Boolean(document.querySelector('.profile-rename-form'))`), 'A rejected name closed the rename editor')
+    await cancelRename()
+    await renameProfile('Profile 2', 'x'.repeat(65))
     assert(await evaluate(`document.body.innerText.includes('Profile names are limited to 64 characters')`), 'Overlong profile name did not show validation')
+    await cancelRename()
+    assert(await evaluate(`[...document.querySelectorAll('.profile-card h3')].some(e=>e.textContent==='Profile 2')`), 'Cancelled rename changed the profile name')
 
-    await evaluate(`window.prompt=()=> 'Road Rig'`)
-    await clickProfileAction('Profile 1', 'Rename')
+    await renameProfile('Profile 1', 'Road Rig')
     await wait(`[...document.querySelectorAll('.profile-card h3')].some(e=>e.textContent==='Road Rig')`, 'profile rename')
     const renamedAt = await evaluate(`JSON.parse(localStorage.getItem('scrcpy-studio:profiles')).find(p=>p.name==='Road Rig')?.updatedAt`)
     assert(Number.isFinite(renamedAt), 'Rename did not update profile metadata')
-    await clickProfileAction('Profile 2', 'Rename')
+    await renameProfile('Profile 2', 'road rig')
     assert(await evaluate(`document.body.innerText.includes('That profile name already exists')`), 'Duplicate profile name was accepted without feedback')
+    await cancelRename()
     assert(await evaluate(`[...document.querySelectorAll('.profile-card h3')].some(e=>e.textContent==='Profile 2')`))
 
     await evaluate(`window.confirm=()=>false`)
