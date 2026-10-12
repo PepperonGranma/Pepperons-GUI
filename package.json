@@ -60,7 +60,7 @@
     "cross-env": "^10.1.0",
     "electron": "44.2.0",
     "electron-builder": "26.16.0",
-    "lucide-react": "0.468.0",
+    "lucide-react": "1.54.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "typescript": "^7.0.2",
