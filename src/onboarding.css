@@ -1,0 +1,86 @@
+/*
+ * Brand mark, startup loader and feature tour. Loaded after refresh.css.
+ * The mark is the maintainer's drawing (src/assets/pepperon.webp) shown as is:
+ * scaled to fit, never redrawn, recoloured or cropped beyond a rounded corner.
+ */
+
+/* ── Brand mark ─────────────────────────────────────────────────────────── */
+
+.app .cat-mark { overflow: hidden; border-radius: 26%; background: #fff; }
+.app .cat-mark > img { display: block; width: 100%; height: 100%; object-fit: cover; user-select: none; -webkit-user-drag: none; }
+
+/* ── Startup loader ─────────────────────────────────────────────────────── */
+
+.startup-loader { gap: 0; }
+.loader-stage { position: relative; z-index: 2; width: 220px; height: 220px; display: grid; place-items: center; margin-bottom: 6px; }
+.loader-mascot {
+  position: relative;
+  z-index: 2;
+  width: 132px;
+  height: 132px;
+  overflow: hidden;
+  border: 3px solid var(--accent);
+  border-radius: 28%;
+  background: #fff;
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent), 0 26px 50px -18px color-mix(in srgb, var(--accent) 70%, transparent);
+  animation: loader-hop 1.5s cubic-bezier(.3, 0, .2, 1) infinite;
+}
+.loader-mascot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.loader-shadow { position: absolute; z-index: 1; bottom: 22px; width: 110px; height: 14px; border-radius: 50%; background: rgba(0, 0, 0, .45); filter: blur(6px); animation: loader-shadow 1.5s cubic-bezier(.3, 0, .2, 1) infinite; }
+.theme-light .loader-shadow { background: rgba(24, 24, 27, .22); }
+.loader-orbit { position: absolute; inset: 0; border: 1px dashed color-mix(in srgb, var(--mint) 38%, transparent); border-radius: 50%; animation: loader-spin 9s linear infinite; }
+.loader-orbit.orbit-b { inset: 22px; border-color: color-mix(in srgb, var(--pink) 34%, transparent); animation-duration: 6s; animation-direction: reverse; }
+.loader-orbit i { position: absolute; top: -5px; left: 50%; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 14px var(--accent); }
+.loader-orbit.orbit-b i { background: var(--pink); box-shadow: 0 0 14px var(--pink); }
+
+.loader-title { position: relative; z-index: 2; margin-bottom: 18px; text-align: center; }
+.loader-title strong { display: block; font: 700 24px var(--font-display); letter-spacing: -.02em; }
+.loader-title span { display: block; margin-top: 3px; color: var(--muted); font: 600 11px var(--font-mono); letter-spacing: .16em; text-transform: uppercase; }
+
+.loader-steps { position: relative; z-index: 2; width: min(320px, calc(100vw - 48px)); display: grid; gap: 7px; margin: 0 0 14px; padding: 0; list-style: none; }
+.loader-steps li { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; opacity: .55; transition: color .25s ease, opacity .25s ease; }
+.loader-steps li > span { width: 20px; height: 20px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; transition: background .25s ease, border-color .25s ease; }
+.loader-steps li svg { width: 12px; height: 12px; }
+.loader-steps li.active { color: var(--text); opacity: 1; }
+.loader-steps li.active > span { border-color: var(--accent); color: var(--accent); }
+.loader-steps li.active svg { animation: loader-spin .9s linear infinite; }
+.loader-steps li.done { color: var(--text); opacity: .9; }
+.loader-steps li.done > span { border-color: transparent; color: #0b1018; background: #42d38a; animation: loader-pop .3s cubic-bezier(.34, 1.56, .64, 1); }
+
+.loader-progress { position: relative; z-index: 2; width: min(320px, calc(100vw - 48px)); height: 5px; overflow: hidden; border-radius: 9px; background: color-mix(in srgb, var(--text) 10%, transparent); }
+.loader-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--pink)); box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent); transition: width .45s cubic-bezier(.2, .8, .2, 1); }
+.startup-loader > small { position: relative; z-index: 2; margin-top: 14px; min-height: 16px; color: var(--muted); font: 600 11px var(--font-mono); letter-spacing: .04em; }
+
+@keyframes loader-hop { 0%, 100% { transform: translateY(0) scale(1); } 30% { transform: translateY(9px) scale(1.06, .93); } 60% { transform: translateY(-14px) scale(.97, 1.04) rotate(-2deg); } }
+@keyframes loader-shadow { 0%, 100% { transform: scaleX(1); opacity: .9; } 30% { transform: scaleX(1.12); opacity: 1; } 60% { transform: scaleX(.78); opacity: .55; } }
+@keyframes loader-spin { to { transform: rotate(360deg); } }
+@keyframes loader-pop { from { transform: scale(.4); } to { transform: scale(1); } }
+
+/* ── Feature tour: plays itself and shows the real page behind each step ── */
+
+/* Lighter than before: the page each step talks about stays recognisable. */
+.app .tour-backdrop { background: color-mix(in srgb, var(--canvas) 58%, transparent); backdrop-filter: blur(2.5px) saturate(.9); }
+.tour-mascot { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; overflow: hidden; border: 2px solid #fff; border-radius: 26%; background: #fff; transform: translate(-50%, -50%); box-shadow: 0 8px 20px rgba(0, 0, 0, .35); }
+.tour-mascot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+.tour-play { height: 36px; display: inline-flex; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid color-mix(in srgb, var(--pink) 45%, var(--line)); border-radius: 9px; color: var(--text); background: color-mix(in srgb, var(--pink) 12%, transparent); font-size: 12px; font-weight: 700; transition: background .16s ease, border-color .16s ease; }
+.tour-play:hover { background: color-mix(in srgb, var(--pink) 22%, transparent); }
+.tour-play svg { width: 14px; height: 14px; }
+.tour-play[aria-pressed='true'] { border-color: var(--pink); background: color-mix(in srgb, var(--pink) 24%, transparent); }
+
+/* The active dot fills over the time the step stays on screen. */
+.tour-progress button.active span { position: relative; overflow: hidden; }
+.tour-progress.playing button.active span { width: 46px; background: color-mix(in srgb, var(--pink) 30%, transparent); box-shadow: none; }
+.tour-progress.playing button.active span::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--pink); transform-origin: left; animation: tour-step-fill var(--tour-step-ms, 6500ms) linear both; }
+@keyframes tour-step-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.tour-page-hint { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; color: var(--muted); font: 600 11px var(--font-mono); letter-spacing: .06em; }
+.tour-page-hint svg { width: 13px; height: 13px; color: var(--highlight-text); }
+
+@media (max-width: 760px) {
+  .tour-play span { display: none; }
+  .tour-play { padding: 0 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loader-mascot, .loader-shadow, .loader-orbit, .loader-steps li svg, .tour-progress.playing button.active span::after { animation: none !important; }
+}

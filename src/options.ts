@@ -1,3 +1,5 @@
+import { categoryFor } from '../electron/device-parsers.mjs'
+import { OPTION_NAMES, OPTIONAL_VALUE_OPTIONS, VALUE_OPTIONS } from '../electron/scrcpy-args.mjs'
 import type { CliOption, StudioConfig, ThemeSettings } from './types'
 
 export const DEFAULT_CONFIG: StudioConfig = {
@@ -11,6 +13,7 @@ export const DEFAULT_CONFIG: StudioConfig = {
   maxFps: '60',
   videoBuffer: '0',
   crop: '',
+  hwdec: 'auto',
   audioEnabled: true,
   audioCodec: 'opus',
   audioEncoder: '',
@@ -68,7 +71,19 @@ export const DEFAULT_THEME: ThemeSettings = {
   radius: 10,
   density: 'compact',
   pattern: false,
+  motion: 'full',
+  backdrop: 'aurora',
+  tilt: true,
+  spotlight: true,
+  glow: 60,
 }
+
+// One-click bundles for the Motion & effects settings.
+export const EFFECT_PRESETS: Array<{ name: string; label: string; patch: Pick<ThemeSettings, 'motion' | 'backdrop' | 'tilt' | 'spotlight' | 'glow'> }> = [
+  { name: 'minimal', label: 'Minimal', patch: { motion: 'off', backdrop: 'none', tilt: false, spotlight: false, glow: 0 } },
+  { name: 'balanced', label: 'Balanced', patch: { motion: 'subtle', backdrop: 'static', tilt: true, spotlight: true, glow: 45 } },
+  { name: 'showtime', label: 'Showtime', patch: { motion: 'full', backdrop: 'aurora', tilt: true, spotlight: true, glow: 85 } },
+]
 
 const VALUE_HINTS: Record<string, string> = {
   '--angle': 'degrees', '--audio-bit-rate': 'value', '--audio-buffer': 'ms', '--audio-codec': 'name',
@@ -76,7 +91,7 @@ const VALUE_HINTS: Record<string, string> = {
   '--background-color': 'hexcolor', '--camera-ar': 'ratio', '--camera-facing': 'facing', '--camera-fps': 'fps',
   '--camera-id': 'id', '--camera-size': 'widthxheight', '--camera-zoom': 'zoom', '--capture-orientation': 'value',
   '--crop': 'width:height:x:y', '--display-id': 'id', '--display-ime-policy': 'value', '--display-orientation': 'value',
-  '--flex-display': 'value', '--gamepad': 'mode', '--keyboard': 'mode', '--max-fps': 'value', '--max-size': 'value',
+  '--gamepad': 'mode', '--hwdec': 'mode', '--keyboard': 'mode', '--max-fps': 'value', '--max-size': 'value',
   '--min-size-alignment': 'value', '--mouse': 'mode', '--mouse-bind': 'buttons', '--new-display': 'widthxheight/dpi',
   '--orientation': 'value', '--pause-on-exit': 'mode', '--port': 'port[:port]', '--push-target': 'path',
   '--record': 'file', '--record-format': 'format', '--record-orientation': 'value', '--render-driver': 'name',
@@ -101,36 +116,22 @@ const DESCRIPTIONS: Record<string, string> = {
   '--record': 'Record the mirrored session to a local media file.',
   '--start-app': 'Start an Android app by package name or friendly name.',
   '--ignore-video-encoder-constraints': 'Ignore reported encoder size constraints (added in v4.1).',
+  '--hwdec': 'Decode video on the computer\'s GPU: auto, disabled, d3d11va (Windows), vaapi (Linux) or videotoolbox (macOS). Added in v5.0.',
 }
 
-export function categoryFor(name: string) {
-  if (name.includes('audio')) return 'Audio'
-  if (name.includes('camera')) return 'Camera'
-  if (/window|fullscreen|screensaver|render|orientation|angle|mipmap|background/.test(name)) return 'Window'
-  if (/record|v4l2|playback|time-limit/.test(name)) return 'Recording'
-  if (/keyboard|mouse|gamepad|clipboard|paste|touch|control|key-repeat|shortcut/.test(name)) return 'Control'
-  if (/display|vd-|flex-display/.test(name)) return 'Display'
-  if (/tcpip|serial|select-|tunnel|port|adb|otg/.test(name)) return 'Connection'
-  if (/video|fps|max-size|encoder|crop|codec|bit-rate|downsize|alignment/.test(name)) return 'Video'
-  return 'General'
-}
-
-const OPTION_NAMES = `--always-on-top --angle --audio-bit-rate --audio-buffer --audio-codec --audio-codec-options --audio-dup --audio-encoder --audio-output-buffer --audio-source --background-color --camera-ar --camera-facing --camera-fps --camera-high-speed --camera-id --camera-size --camera-torch --camera-zoom --capture-orientation --crop --disable-screensaver --display-id --display-ime-policy --display-orientation --flex-display --force-adb-forward --fullscreen --gamepad --ignore-video-encoder-constraints --keep-active --keyboard --kill-adb-on-close --legacy-paste --list-apps --list-camera-sizes --list-cameras --list-displays --list-encoders --max-fps --max-size --min-size-alignment --mouse --mouse-bind --new-display --no-audio --no-audio-playback --no-cleanup --no-clipboard-autosync --no-control --no-downsize-on-error --no-key-repeat --no-mipmaps --no-mouse-hover --no-playback --no-power-on --no-terminal-title --no-vd-destroy-content --no-vd-system-decorations --no-video --no-video-playback --no-window --no-window-aspect-ratio-lock --orientation --otg --pause-on-exit --port --power-off-on-close --prefer-text --print-fps --push-target --raw-key-events --record --record-format --record-orientation --render-driver --render-fit --require-audio --screen-off-timeout --select-tcpip --select-usb --serial --shortcut-mod --show-touches --start-app --stay-awake --tcpip --time-limit --tunnel-host --tunnel-port --turn-screen-off --v4l2-buffer --v4l2-sink --verbosity --video-bit-rate --video-buffer --video-codec --video-codec-options --video-encoder --video-source --window-borderless --window-height --window-title --window-width --window-x --window-y`
-
-const OPTIONAL_VALUE_OPTIONS = new Set(['--new-display', '--pause-on-exit', '--tcpip'])
-
-export const FALLBACK_OPTIONS: CliOption[] = OPTION_NAMES.split(' ').map((name) => ({
+// The catalog itself lives in electron/scrcpy-args.mjs, shared with main-process validation.
+export const FALLBACK_OPTIONS: CliOption[] = OPTION_NAMES.map((name) => ({
   name,
   short: '',
-  valueHint: VALUE_HINTS[name] || '',
-  kind: VALUE_HINTS[name] ? 'value' : 'boolean',
+  valueHint: VALUE_OPTIONS.has(name) ? VALUE_HINTS[name] || 'value' : '',
+  kind: VALUE_OPTIONS.has(name) ? 'value' : 'boolean',
   optionalValue: OPTIONAL_VALUE_OPTIONS.has(name),
   category: categoryFor(name),
   description: DESCRIPTIONS[name] || `Pass ${name} directly to Scrcpy.`,
 }))
 
 const handledOptions = new Set([
-  '--serial', '--no-video', '--video-source', '--video-codec', '--video-encoder', '--video-bit-rate', '--max-size', '--max-fps', '--video-buffer', '--crop',
+  '--serial', '--no-video', '--video-source', '--video-codec', '--video-encoder', '--video-bit-rate', '--max-size', '--max-fps', '--video-buffer', '--crop', '--hwdec',
   '--no-audio', '--audio-codec', '--audio-source', '--audio-bit-rate', '--audio-buffer', '--audio-dup', '--no-control',
   '--audio-encoder', '--keyboard', '--mouse', '--gamepad', '--no-clipboard-autosync', '--show-touches', '--stay-awake', '--turn-screen-off',
   '--power-off-on-close', '--window-title', '--window-width', '--window-height', '--window-x', '--window-y', '--always-on-top', '--window-borderless', '--fullscreen', '--disable-screensaver',
@@ -141,6 +142,8 @@ const handledOptions = new Set([
 export function isGuidedOption(name: string) {
   return handledOptions.has(name)
 }
+
+export const HWDEC_MODES = ['auto', 'disabled', 'd3d11va', 'vaapi', 'videotoolbox'] as const
 
 export function buildArgs(config: StudioConfig): string[] {
   const args: string[] = []
@@ -161,6 +164,8 @@ export function buildArgs(config: StudioConfig): string[] {
     value('--max-fps', config.maxFps)
     if (config.videoBuffer !== '0') value('--video-buffer', config.videoBuffer)
     value('--crop', config.crop)
+    // Automatic is scrcpy's own default, and older runtimes do not know the flag at all.
+    if (config.hwdec && config.hwdec !== 'auto') value('--hwdec', config.hwdec)
   }
 
   if (!config.audioEnabled) flag('--no-audio', true)
@@ -237,7 +242,7 @@ export function getGuidedOptionValue(config: StudioConfig, name: string): boolea
   const values: Record<string, boolean | string> = {
     '--serial': config.serial, '--no-video': !config.videoEnabled, '--video-source': config.videoSource, '--video-codec': config.videoCodec,
     '--video-encoder': config.videoEncoder, '--video-bit-rate': config.videoBitRate, '--max-size': config.maxSize,
-    '--max-fps': config.maxFps, '--video-buffer': config.videoBuffer, '--crop': config.crop,
+    '--max-fps': config.maxFps, '--video-buffer': config.videoBuffer, '--crop': config.crop, '--hwdec': config.hwdec === 'auto' ? '' : config.hwdec,
     '--no-audio': !config.audioEnabled, '--audio-codec': config.audioCodec, '--audio-encoder': config.audioEncoder,
     '--audio-source': config.audioSource, '--audio-bit-rate': config.audioBitRate, '--audio-buffer': config.audioBuffer,
     '--audio-dup': config.audioDup, '--no-control': !config.controlEnabled, '--keyboard': config.keyboard,
@@ -273,6 +278,7 @@ export function applyGuidedOptionValue(config: StudioConfig, name: string, next:
     case '--max-fps': patch.maxFps = text; break
     case '--video-buffer': patch.videoBuffer = text; break
     case '--crop': patch.crop = text; break
+    case '--hwdec': patch.hwdec = (HWDEC_MODES as readonly string[]).includes(text) ? text as StudioConfig['hwdec'] : 'auto'; break
     case '--no-audio': patch.audioEnabled = !bool; break
     case '--audio-codec': patch.audioCodec = text as StudioConfig['audioCodec']; break
     case '--audio-encoder': patch.audioEncoder = text; break

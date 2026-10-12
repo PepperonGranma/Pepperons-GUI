@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell, Tray } = require('electron')
 const { spawn } = require('node:child_process')
 const { createHash } = require('node:crypto')
 const fs = require('node:fs')
@@ -17,7 +17,7 @@ for (const stream of [process.stdout, process.stderr]) {
   })
 }
 
-const APP_NAME = "Pepperon's GUI"
+const APP_NAME = "Pepperon GUI"
 // Keep the existing runtime, preferences, and Chromium profile across the rebrand.
 const settingsDirectory = path.join(app.getPath('appData'), 'scrcpy-studio')
 fs.mkdirSync(settingsDirectory, { recursive: true })
@@ -33,7 +33,9 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
-const { constraintsFor, validateConstraint, withConstraints } = require('./command-constraints.mjs')
+const { withConstraints } = require('./command-constraints.mjs')
+const { argsEqual, formatCommand, platformIssue, serialFromArgs, validateArgs: validateArgsFor } = require('./scrcpy-args.mjs')
+const { createLineSplitter, isScrcpyError, parseCameras, parseDeviceList, parseDisplayCapabilities, parseEncoders, parseHelp, parseProperties } = require('./device-parsers.mjs')
 let constraintRuntimeVersion = ''
 let mainWindow
 let mainWindowReady = false
@@ -52,6 +54,15 @@ let shutdownPrepared = false
 const capabilityCache = new Map()
 const capabilityRequests = new Map()
 const APPLY_DEBOUNCE_MS = 250
+const PROFILE_FILE_LIMIT = 2 * 1024 * 1024
+const ZOOM_STEP = 0.5
+const ZOOM_LIMIT = 3
+
+let tray = null
+// Opt-in desktop behavior, persisted in preferences.json.
+const appSettings = { minimizeToTray: false, closeToTray: false }
+let trayHintShown = false
+let quitRequested = false
 
 function focusMainWindow() {
   // Repeated launches during startup must not reveal an unpainted window.
@@ -59,6 +70,51 @@ function focusMainWindow() {
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
+}
+
+const appIconPath = () => app.isPackaged ? path.join(process.resourcesPath, 'icon.ico') : path.join(__dirname, '..', 'build', 'icon.ico')
+
+function trayToolTip() {
+  const status = { live: 'Mirroring', starting: 'Starting', applying: 'Applying changes', restarting: 'Restarting', reconnecting: 'Reconnecting', disconnected: 'Device disconnected', error: 'Session error' }[sessionState.status]
+  return status ? `${APP_NAME} · ${status}` : APP_NAME
+}
+
+function refreshTray() {
+  if (!tray) return
+  const stoppable = Boolean(activeSession || sessionIntent)
+  tray.setToolTip(trayToolTip())
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: `Show ${APP_NAME}`, click: focusMainWindow },
+    { label: 'Stop Mirroring', enabled: stoppable, click: () => { stopSession().catch(() => {}) } },
+    { type: 'separator' },
+    { label: 'Quit', click: () => app.quit() },
+  ]))
+}
+
+// The tray icon exists only while a tray option is enabled, so the default
+// experience stays a normal taskbar application.
+function applyTraySetting() {
+  if (!appSettings.minimizeToTray && !appSettings.closeToTray) {
+    if (!tray) return
+    tray.destroy()
+    tray = null
+    // Never strand a hidden window without a tray icon to bring it back.
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) focusMainWindow()
+    return
+  }
+  if (tray) return
+  tray = new Tray(appIconPath())
+  tray.on('click', focusMainWindow)
+  refreshTray()
+}
+
+function hideToTray() {
+  if (!tray || shutdownPromise || !mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.hide()
+  if (!trayHintShown && process.platform === 'win32') {
+    trayHintShown = true
+    tray.displayBalloon({ title: APP_NAME, content: 'Still running in the system tray. Click the icon to bring the window back.', iconType: 'info' })
+  }
 }
 
 app.on('second-instance', focusMainWindow)
@@ -172,52 +228,6 @@ async function findRuntime(force = false) {
   return cachedRuntime
 }
 
-function categoryFor(name) {
-  if (/audio/.test(name)) return 'Audio'
-  if (/camera/.test(name)) return 'Camera'
-  if (/window|fullscreen|screensaver|render|orientation|angle|mipmap|background/.test(name)) return 'Window'
-  if (/record|v4l2|playback|time-limit/.test(name)) return 'Recording'
-  if (/keyboard|mouse|gamepad|clipboard|paste|touch|control|key-repeat|shortcut/.test(name)) return 'Control'
-  if (/display|new-display|vd-|flex-display/.test(name)) return 'Display'
-  if (/tcpip|serial|select-|tunnel|port|adb|otg/.test(name)) return 'Connection'
-  if (/video|fps|max-size|encoder|crop|codec|bit-rate|downsize|alignment/.test(name)) return 'Video'
-  return 'General'
-}
-
-function parseHelp(raw) {
-  const lines = raw.replace(/\r/g, '').split('\n')
-  const options = []
-  let current = null
-  for (const line of lines) {
-    // Option declarations in scrcpy help are indented by four spaces. Requiring
-    // that exact level avoids treating indented usage examples as new options.
-    const match = line.match(/^ {4}(?:(-[A-Za-z0-9]),\s*)?(--[a-z0-9][a-z0-9-]*)(.*)$/)
-    if (match) {
-      if (current) options.push(current)
-      const suffix = (match[3] || '').trim()
-      const hint = (suffix.startsWith('[=') && suffix.endsWith(']')
-        ? suffix.slice(2, -1)
-        : suffix.startsWith('=') ? suffix.slice(1) : suffix).replace(/^<|>$/g, '')
-      current = {
-        name: match[2],
-        short: match[1] || '',
-        valueHint: hint,
-        kind: hint ? 'value' : 'boolean',
-        optionalValue: suffix.startsWith('[='),
-        category: categoryFor(match[2]),
-        description: '',
-      }
-    } else if (current && (/^\S/.test(line) || /^ {4}-[A-Za-z0-9](?:\s|$)/.test(line))) {
-      options.push(current)
-      current = null
-    } else if (current && line.trim()) {
-      current.description += `${current.description ? ' ' : ''}${line.trim()}`
-    }
-  }
-  if (current) options.push(current)
-  return [...new Map(options.map((option) => [option.name, option])).values()]
-}
-
 async function latestRelease() {
   const json = await requestJson('https://api.github.com/repos/Genymobile/scrcpy/releases/latest')
   return {
@@ -227,14 +237,21 @@ async function latestRelease() {
   }
 }
 
-function requestJson(url) {
+const MAX_REDIRECTS = 5
+// A stalled connection must not hold the startup loader or an install open.
+const REQUEST_TIMEOUT_MS = 5000
+const DOWNLOAD_IDLE_TIMEOUT_MS = 30000
+
+function requestJson(url, redirects = 0) {
   return new Promise((resolve, reject) => {
     const request = https.get(url, {
       headers: { 'User-Agent': 'Scrcpy-Studio', Accept: 'application/vnd.github+json' },
+      timeout: REQUEST_TIMEOUT_MS,
     }, (response) => {
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume()
-        requestJson(response.headers.location).then(resolve, reject)
+        if (redirects >= MAX_REDIRECTS) reject(new Error('GitHub redirected too many times.'))
+        else requestJson(response.headers.location, redirects + 1).then(resolve, reject)
         return
       }
       if (response.statusCode !== 200) {
@@ -247,17 +264,20 @@ function requestJson(url) {
       response.on('end', () => {
         try { resolve(JSON.parse(data)) } catch (error) { reject(error) }
       })
+      response.on('error', reject)
     })
+    request.on('timeout', () => request.destroy(new Error('GitHub did not respond in time.')))
     request.on('error', reject)
   })
 }
 
-function download(url, destination, onProgress) {
+function download(url, destination, onProgress, redirects = 0) {
   return new Promise((resolve, reject) => {
-    const request = https.get(url, { headers: { 'User-Agent': 'Scrcpy-Studio' } }, (response) => {
+    const request = https.get(url, { headers: { 'User-Agent': 'Scrcpy-Studio' }, timeout: DOWNLOAD_IDLE_TIMEOUT_MS }, (response) => {
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume()
-        download(response.headers.location, destination, onProgress).then(resolve, reject)
+        if (redirects >= MAX_REDIRECTS) reject(new Error('The download redirected too many times.'))
+        else download(response.headers.location, destination, onProgress, redirects + 1).then(resolve, reject)
         return
       }
       if (response.statusCode !== 200) {
@@ -273,9 +293,11 @@ function download(url, destination, onProgress) {
         if (total) onProgress(Math.round((received / total) * 100))
       })
       response.pipe(file)
+      response.on('error', (error) => file.destroy(error))
       file.on('finish', () => file.close(resolve))
       file.on('error', reject)
     })
+    request.on('timeout', () => request.destroy(new Error('The download stalled. Check the connection and try again.')))
     request.on('error', reject)
   })
 }
@@ -288,12 +310,13 @@ async function runtimeStatus() {
     try {
       const version = await runCapture(runtime.scrcpyPath, ['--version'])
       installedVersion = version.output.match(/scrcpy\s+([\w.-]+)/i)?.[1] || version.output.split('\n')[0]
-      constraintRuntimeVersion = installedVersion
       const help = await runCapture(runtime.scrcpyPath, ['--help'])
       options = parseHelp(help.output).map(option => withConstraints({ ...option, source: 'runtime' }, installedVersion))
     } catch {}
   }
-  let release = { version: '4.1', url: 'https://github.com/Genymobile/scrcpy/releases/latest' }
+  constraintRuntimeVersion = installedVersion
+  // An empty version means "unknown": the interface then offers no update.
+  let release = { version: '', url: 'https://github.com/Genymobile/scrcpy/releases/latest' }
   try { release = await latestRelease() } catch {}
   return {
     installed: Boolean(runtime.scrcpyPath),
@@ -310,132 +333,14 @@ async function listDevices() {
   const runtime = await findRuntime()
   try {
     const result = await runCapture(runtime.adbPath, ['devices', '-l'])
-    return result.output.split(/\r?\n/).slice(1).map((line) => line.trim()).filter(Boolean).map((line) => {
-      const [serial, state, ...details] = line.split(/\s+/)
-      const props = Object.fromEntries(details.filter((part) => part.includes(':')).map((part) => {
-        const index = part.indexOf(':')
-        return [part.slice(0, index), part.slice(index + 1)]
-      }))
-      return {
-        serial,
-        state,
-        model: (props.model || props.device || 'Android device').replace(/_/g, ' '),
-        product: props.product || '',
-        transportId: props.transport_id || '',
-        connection: serial.includes(':') ? 'Wi-Fi' : 'USB',
-        usable: state === 'device',
-      }
-    })
+    return parseDeviceList(result.output)
   } catch {
     return []
   }
 }
 
-function validateArgs(args) {
-  if (!Array.isArray(args) || args.some((arg) => typeof arg !== 'string' || arg.length > 2048 || /[\0\r\n]/.test(arg))) {
-    throw new Error('Invalid Scrcpy arguments.')
-  }
-  if (args.join('').length > 32768) throw new Error('The generated command is too long.')
-  const entries = args.map((arg) => {
-    const separator = arg.indexOf('=')
-    return { arg, name: separator < 0 ? arg : arg.slice(0, separator), value: separator < 0 ? undefined : arg.slice(separator + 1) }
-  })
-  if (entries.some(({ name }) => !/^--[a-z0-9][a-z0-9-]*$/.test(name))) throw new Error('Only long-form Scrcpy options are accepted.')
-  const duplicate = entries.find((entry, index) => entries.findIndex((candidate) => candidate.name === entry.name) !== index)
-  if (duplicate) throw new Error(`${duplicate.name} was provided more than once.`)
-  if (entries.some(({ value }) => value === '')) throw new Error('Empty option values are not valid. Clear the option or enable an optional-value flag without a value.')
-  const valueOptions = new Set(`--angle --audio-bit-rate --audio-buffer --audio-codec --audio-codec-options --audio-encoder --audio-output-buffer --audio-source --background-color --camera-ar --camera-facing --camera-fps --camera-id --camera-size --camera-zoom --capture-orientation --crop --display-id --display-ime-policy --display-orientation --gamepad --keyboard --max-fps --max-size --min-size-alignment --mouse --mouse-bind --new-display --orientation --pause-on-exit --port --push-target --record --record-format --record-orientation --render-driver --render-fit --screen-off-timeout --serial --shortcut-mod --start-app --tcpip --time-limit --tunnel-host --tunnel-port --v4l2-buffer --v4l2-sink --verbosity --video-bit-rate --video-buffer --video-codec --video-codec-options --video-encoder --video-source --window-height --window-title --window-width --window-x --window-y`.split(' '))
-  const optionalValueOptions = new Set(['--new-display', '--pause-on-exit', '--tcpip'])
-  const knownBooleanOptions = new Set(`--always-on-top --audio-dup --camera-high-speed --camera-torch --disable-screensaver --flex-display --force-adb-forward --fullscreen --ignore-video-encoder-constraints --keep-active --kill-adb-on-close --legacy-paste --list-apps --list-camera-sizes --list-cameras --list-displays --list-encoders --no-audio --no-audio-playback --no-cleanup --no-clipboard-autosync --no-control --no-downsize-on-error --no-key-repeat --no-mipmaps --no-mouse-hover --no-playback --no-power-on --no-terminal-title --no-vd-destroy-content --no-vd-system-decorations --no-video --no-video-playback --no-window --no-window-aspect-ratio-lock --otg --power-off-on-close --prefer-text --print-fps --raw-key-events --require-audio --select-tcpip --select-usb --show-touches --stay-awake --turn-screen-off --window-borderless`.split(' '))
-  const missingValue = entries.find(({ name, value }) => valueOptions.has(name) && value === undefined && !optionalValueOptions.has(name))
-  if (missingValue) throw new Error(`${missingValue.name} requires a value.`)
-  const booleanWithValue = entries.find(({ name, value }) => knownBooleanOptions.has(name) && value !== undefined)
-  if (booleanWithValue) throw new Error(`${booleanWithValue.name} is a boolean flag and does not accept a value.`)
-  const valueFor = (name) => entries.find((entry) => entry.name === name)?.value
-  const has = (name) => entries.some((entry) => entry.name === name)
-  const enums = {
-    '--audio-codec': ['opus', 'aac', 'flac', 'raw'],
-    '--audio-source': ['output', 'playback', 'mic', 'mic-unprocessed', 'mic-camcorder', 'mic-voice-recognition', 'mic-voice-communication', 'voice-call', 'voice-call-uplink', 'voice-call-downlink', 'voice-performance'],
-    '--camera-facing': ['front', 'back', 'external'],
-    '--display-ime-policy': ['local', 'fallback', 'hide'],
-    '--gamepad': ['disabled', 'uhid', 'aoa'],
-    '--keyboard': ['disabled', 'sdk', 'uhid', 'aoa'],
-    '--mouse': ['disabled', 'sdk', 'uhid', 'aoa'],
-    '--pause-on-exit': ['true', 'false', 'if-error'],
-    '--record-format': ['mp4', 'mkv', 'm4a', 'mka', 'opus', 'aac', 'flac', 'wav'],
-    '--render-driver': ['direct3d', 'opengl', 'opengles2', 'opengles', 'metal', 'software'],
-    '--render-fit': ['letterbox', 'stretched', 'unscaled'],
-    '--verbosity': ['verbose', 'debug', 'info', 'warn', 'error'],
-    '--video-codec': ['h264', 'h265', 'av1', 'vp8', 'vp9'],
-    '--video-source': ['display', 'camera'],
-  }
-  for (const [name, choices] of Object.entries(enums)) {
-    const value = valueFor(name)
-    if (value !== undefined && !choices.includes(value)) throw new Error(`${name} must be one of: ${choices.join(', ')}.`)
-  }
-  for (const { name, value } of entries) {
-    if (value === undefined) continue
-    const error = validateConstraint(value, constraintsFor(name, constraintRuntimeVersion))
-    if (error) throw new Error(`${name}: ${error}`)
-  }
-  // These strings are forwarded to Android, not range-checked by scrcpy's CLI.
-  // Retain basic numeric syntax validation without inventing upper/lower bounds.
-  for (const name of ['--angle', '--max-fps', '--camera-zoom']) {
-    const value = valueFor(name)
-    if (value !== undefined && !Number.isFinite(Number(value))) throw new Error(`${name} must be a finite number.`)
-  }
-  const backgroundColor = valueFor('--background-color')
-  if (backgroundColor !== undefined && !/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(backgroundColor)) throw new Error('--background-color must use #RGB or #RRGGBB.')
-  const cameraAr = valueFor('--camera-ar')
-  if (cameraAr !== undefined && cameraAr !== 'sensor' && (!/^(?:\d+(?:\.\d+)?|\d+:\d+)$/.test(cameraAr) || cameraAr.split(':').some((part) => Number(part) <= 0))) throw new Error('--camera-ar must be sensor, a positive decimal, or num:den.')
-  const cameraSize = valueFor('--camera-size')
-  if (cameraSize !== undefined && (!/^\d+x\d+$/.test(cameraSize) || cameraSize.split('x').some((part) => Number(part) <= 0))) throw new Error('--camera-size must use positive widthxheight values.')
-  const crop = valueFor('--crop')
-  if (crop !== undefined && (!/^\d+:\d+:\d+:\d+$/.test(crop) || crop.split(':').slice(0, 2).some((part) => Number(part) <= 0))) throw new Error('--crop must use positive width:height and non-negative x:y values.')
-  const newDisplay = valueFor('--new-display')
-  if (newDisplay !== undefined && (!/^(?:\d+x\d+)?(?:\/\d+)?$/.test(newDisplay) || newDisplay.split(/[x/]/).filter(Boolean).some((part) => Number(part) <= 0))) throw new Error('--new-display must use positive widthxheight, widthxheight/dpi, /dpi, or no value.')
-  const mouseBind = valueFor('--mouse-bind')
-  if (mouseBind !== undefined && !/^[+\-bhsn]{4}(?::[+\-bhsn]{4})?$/.test(mouseBind)) throw new Error('--mouse-bind requires one or two four-character button maps.')
-  const shortcutMod = valueFor('--shortcut-mod')
-  if (shortcutMod !== undefined && !/^(?:lctrl|rctrl|lalt|ralt|lsuper|rsuper)(?:\+(?:lctrl|rctrl|lalt|ralt|lsuper|rsuper))*(?:,(?:lctrl|rctrl|lalt|ralt|lsuper|rsuper)(?:\+(?:lctrl|rctrl|lalt|ralt|lsuper|rsuper))*)*$/.test(shortcutMod)) throw new Error('--shortcut-mod contains an unsupported modifier expression.')
-  const tcpip = valueFor('--tcpip')
-  if (tcpip !== undefined && (/\s/.test(tcpip) || tcpip === '+' || (/:(\d+)$/.test(tcpip) && (Number(tcpip.match(/:(\d+)$/)[1]) < 1 || Number(tcpip.match(/:(\d+)$/)[1]) > 65535)))) throw new Error('--tcpip must use [+]ip[:port] with a valid port.')
-  if (args.includes('--no-control')) {
-    const incompatible = ['--show-touches', '--stay-awake', '--turn-screen-off', '--power-off-on-close', '--keyboard', '--mouse', '--gamepad']
-      .filter((flag) => entries.some((entry) => entry.name === flag))
-    if (incompatible.length) throw new Error(`${incompatible.join(', ')} require Scrcpy device control. Use the in-session ADB controls instead.`)
-  }
-  const selectors = args.filter((arg) => arg === '--serial' || arg.startsWith('--serial=') || arg === '--select-usb' || arg === '--select-tcpip' || arg.startsWith('--tcpip='))
-  if (selectors.length > 1) throw new Error(`Choose only one Scrcpy device selector: ${selectors.join(', ')}.`)
-  if (has('--audio-dup') && valueFor('--audio-source') !== 'playback') throw new Error('--audio-dup requires --audio-source=playback.')
-  const audioConfiguration = ['--audio-bit-rate', '--audio-buffer', '--audio-codec', '--audio-codec-options', '--audio-dup', '--audio-encoder', '--audio-output-buffer', '--audio-source', '--require-audio'].filter(has)
-  if (has('--no-audio') && audioConfiguration.length) throw new Error(`${audioConfiguration.join(', ')} cannot be combined with --no-audio.`)
-  const videoConfiguration = ['--video-bit-rate', '--video-buffer', '--video-codec', '--video-codec-options', '--video-encoder', '--video-source', '--max-fps', '--max-size', '--crop', '--camera-ar', '--camera-facing', '--camera-fps', '--camera-high-speed', '--camera-id', '--camera-size', '--camera-torch', '--camera-zoom', '--display-id', '--new-display'].filter(has)
-  if (has('--no-video') && videoConfiguration.length) throw new Error(`${videoConfiguration.join(', ')} cannot be combined with --no-video.`)
-  if (has('--camera-id') && has('--camera-facing')) throw new Error('Choose either --camera-id or --camera-facing, not both.')
-  const cameraOnly = ['--camera-ar', '--camera-facing', '--camera-fps', '--camera-high-speed', '--camera-id', '--camera-size', '--camera-torch', '--camera-zoom'].filter(has)
-  if (cameraOnly.length && valueFor('--video-source') !== 'camera') throw new Error(`${cameraOnly.join(', ')} require --video-source=camera.`)
-  const displayOnly = ['--display-id', '--new-display'].filter(has)
-  if (valueFor('--video-source') === 'camera' && displayOnly.length) throw new Error(`${displayOnly.join(', ')} cannot be combined with --video-source=camera.`)
-  if (has('--display-id') && has('--new-display')) throw new Error('--display-id cannot be combined with --new-display.')
-  if (has('--record-format') && !has('--record')) throw new Error('--record-format requires --record.')
-  if (has('--no-playback') && !has('--record') && !has('--v4l2-sink')) throw new Error('--no-playback requires --record or --v4l2-sink so the captured media has an output.')
-  return [...args]
-}
-
-function serialFromArgs(args) {
-  const direct = args.find((arg) => arg.startsWith('--serial='))
-  return direct ? direct.slice('--serial='.length) : ''
-}
-
-function comparableArgs(args) {
-  const liveFlags = new Set(['--show-touches', '--stay-awake', '--turn-screen-off'])
-  return args.filter((arg) => !liveFlags.has(arg)).slice().sort()
-}
-
-function argsEqual(left, right) {
-  return JSON.stringify(comparableArgs(left)) === JSON.stringify(comparableArgs(right))
-}
+// Numeric parser metadata is version-gated; validate against the inspected runtime.
+const validateArgs = (args) => validateArgsFor(args, constraintRuntimeVersion)
 
 function emitLog(level, text) {
   if (text && String(text).trim()) safeSend('scrcpy:log', { level, text: String(text).trim() })
@@ -450,6 +355,7 @@ function updateSession(patch) {
     appliedArgs: [...appliedArgs],
   }
   safeSend('scrcpy:state', sessionState)
+  refreshTray()
   return sessionState
 }
 
@@ -546,6 +452,8 @@ Start-Sleep -Milliseconds 500
 async function launchDesired(reason) {
   const runtime = await findRuntime(true)
   if (!runtime.scrcpyPath) throw new Error('Scrcpy is not installed or configured.')
+  const blocked = platformIssue(desiredArgs, process.platform)
+  if (blocked) throw new Error(blocked)
   const selected = await ensureSelectedDevice(desiredArgs)
   const prepared = makeRecordingSegment([...desiredArgs], reason)
   updateSession({
@@ -565,21 +473,27 @@ async function launchDesired(reason) {
   const closePromise = new Promise((resolve) => { resolveClose = resolve })
   const record = { child, args: prepared.args, desiredArgs: [...desiredArgs], closePromise, resolveClose, intentional: false, recordingPath: prepared.recordingPath }
   activeSession = record
-  emitLog('command', `scrcpy ${prepared.args.join(' ')}`)
-  const handleOutput = (data) => {
-    const text = data.toString()
-    emitLog('info', text)
-    const errorLine = text.split(/\r?\n/).find((line) => /(?:^|\])\s*ERROR:|^ERROR:/i.test(line.trim()))
-    if (errorLine) record.lastError = errorLine.trim().replace(/^\[[^\]]+\]\s*/, '')
+  emitLog('command', formatCommand(prepared.args))
+  // Only whole lines are classified, so an ERROR line split across two chunks is
+  // neither missed nor shown as two fragments.
+  const report = (lines) => {
+    const errors = lines.filter(isScrcpyError)
+    emitLog('info', lines.filter((line) => !isScrcpyError(line)).join('\n'))
+    if (errors.length) emitLog('error', errors.join('\n'))
+    if (errors.length) record.lastError = errors[0].trim().replace(/^\[[^\]]+\]\s*/, '')
   }
-  child.stdout?.on('data', handleOutput)
-  child.stderr?.on('data', handleOutput)
+  const splitters = [child.stdout, child.stderr].filter(Boolean).map((stream) => {
+    const splitter = createLineSplitter()
+    stream.on('data', (data) => report(splitter.push(data)))
+    return splitter
+  })
   child.on('spawn', () => {
     appliedArgs = [...record.desiredArgs]
     updateSession({ running: true, status: 'live', pid: child.pid, startedAt: Date.now(), code: undefined, error: undefined, activeSerial: selected.serial, recordingPath: prepared.recordingPath })
   })
   child.on('error', (error) => emitLog('error', error.message))
   child.on('close', async (code) => {
+    for (const splitter of splitters) report(splitter.flush())
     record.resolveClose({ code })
     if (activeSession === record) activeSession = null
     if (record.intentional) return
@@ -656,107 +570,12 @@ function settledOutput(result) {
   return result.status === 'fulfilled' ? result.value.output : ''
 }
 
-function parseProperties(raw) {
-  const properties = {}
-  for (const line of raw.split(/\r?\n/)) {
-    const match = line.match(/^\[([^\]]+)\]:\s*\[(.*)\]$/)
-    if (match) properties[match[1]] = match[2]
-  }
-  return properties
-}
-
-function parseResolution(raw, label) {
-  const match = raw.match(new RegExp(`${label}\\s+(?:size:\\s*)?(\\d+)x(\\d+)`, 'i'))
-  return match ? { width: Number(match[1]), height: Number(match[2]) } : null
-}
-
-function parseEncoders(raw, media) {
-  const matches = []
-  const expression = new RegExp(`--${media}-codec=([a-z0-9]+)[^\\n]*--${media}-encoder=(?:'([^']+)'|"([^"]+)"|([^\\s]+))`, 'gi')
-  let match
-  while ((match = expression.exec(raw))) matches.push({ codec: match[1].toLowerCase(), name: match[2] || match[3] || match[4] })
-  if (!matches.length) {
-    const sectionLines = raw.split(/\r?\n/).filter((line) => line.toLowerCase().includes(media))
-    for (const line of sectionLines) {
-      const codec = line.match(/\b(h264|h265|av1|vp8|vp9|opus|aac|flac|raw)\b/i)?.[1]
-      const encoder = line.match(/(?:encoder[:=]\s*|--\w+-encoder=)(['"]?)([\w.:-]+)\1/i)?.[2]
-      if (codec && encoder) matches.push({ codec: codec.toLowerCase(), name: encoder })
-    }
-  }
-  return [...new Map(matches.map((item) => [`${item.codec}|${item.name}`, item])).values()]
-}
-
-function parseDisplayCapabilities(wmSize, wmDensity, displayDump, displayList) {
-  const physical = parseResolution(wmSize, 'Physical') || parseResolution(wmSize, '')
-  const current = parseResolution(wmSize, 'Override') || physical
-  const physicalDensity = wmDensity.match(/Physical density:\s*(\d+)/i)
-  const overrideDensity = wmDensity.match(/Override density:\s*(\d+)/i)
-  const density = Number((overrideDensity || physicalDensity || [])[1]) || undefined
-  const modes = []
-  const modeExpression = /(?:id|modeId)\s*[=:]\s*(\d+)[^\n]{0,100}?(?:width\s*[=:]\s*)?(\d{3,5})\s*(?:x|,\s*height\s*[=:]\s*)(\d{3,5})[^\n]{0,80}?(?:fps|refreshRate)\s*[=:]\s*(\d+(?:\.\d+)?)/gi
-  let match
-  while ((match = modeExpression.exec(displayDump))) modes.push({ id: Number(match[1]), width: Number(match[2]), height: Number(match[3]), refreshRate: Number(match[4]) })
-  const rates = []
-  const rateExpression = /(?:refreshRate|fps|mRefreshRate)\s*[=:]\s*(\d+(?:\.\d+)?)/gi
-  while ((match = rateExpression.exec(displayDump))) {
-    const rate = Number(match[1])
-    if (rate >= 20 && rate <= 240) rates.push(Math.round(rate * 100) / 100)
-  }
-  const modeRates = modes.map((mode) => mode.refreshRate).filter(Boolean)
-  const supportedRefreshRates = [...new Set(modeRates.length ? modeRates : rates)].sort((a, b) => a - b)
-  const activeModeId = Number(displayDump.match(/(?:mActiveModeId|activeModeId)\s*[=:]\s*(\d+)/i)?.[1]) || undefined
-  const activeMode = modes.find((mode) => mode.id === activeModeId)
-  const directCurrent = Number(displayDump.match(/(?:mRefreshRate|refreshRate)\s*[=:]\s*(\d+(?:\.\d+)?)/i)?.[1]) || undefined
-  const displayIds = [...new Set([...displayList.matchAll(/(?:--display-id=|Display\s+)(\d+)/gi)].map((item) => Number(item[1])))]
-  if (!displayIds.length) displayIds.push(0)
-  const orientation = displayDump.match(/(?:mCurrentOrientation|orientation)\s*[=:]\s*([A-Za-z0-9_-]+)/i)?.[1]
-  return {
-    physicalWidth: physical?.width,
-    physicalHeight: physical?.height,
-    currentWidth: current?.width,
-    currentHeight: current?.height,
-    densityDpi: density,
-    currentRefreshRate: activeMode?.refreshRate || directCurrent,
-    supportedRefreshRates,
-    maxRefreshRate: supportedRefreshRates.length ? Math.max(...supportedRefreshRates) : undefined,
-    orientation,
-    displayIds,
-    modes,
-  }
-}
-
-function parseCameras(raw, sizeRaw) {
-  const cameras = []
-  const lines = `${raw}\n${sizeRaw}`.split(/\r?\n/)
-  for (const line of lines) {
-    const id = line.match(/--camera-id=(?:'([^']+)'|"([^"]+)"|([^\s,)]+))/i)?.slice(1).find(Boolean)
-      || line.match(/camera(?:\s+id)?\s*[:=]\s*([\w.-]+)/i)?.[1]
-    if (!id) continue
-    let camera = cameras.find((item) => item.id === id)
-    if (!camera) {
-      const facingText = line.match(/\b(front|back|external)\b/i)?.[1]?.toLowerCase()
-      camera = { id, facing: facingText || 'unknown', sizes: [], frameRates: [] }
-      cameras.push(camera)
-    }
-    for (const size of line.matchAll(/\b(\d{3,5}x\d{3,5})\b/g)) camera.sizes.push(size[1])
-    for (const fps of line.matchAll(/(?:fps|@)\s*[=:]?\s*(\d+(?:\.\d+)?)/gi)) camera.frameRates.push(Number(fps[1]))
-    const fpsSet = line.match(/fps\s*=\s*\{([^}]+)\}/i)?.[1]
-    if (fpsSet) for (const value of fpsSet.split(',')) { const parsed = Number(value.trim()); if (parsed) camera.frameRates.push(parsed) }
-    if (/high.?speed/i.test(line)) camera.highSpeed = true
-    if (/torch/i.test(line)) camera.torchSupported = !/(?:no|without|unsupported)\s+torch/i.test(line)
-  }
-  for (const camera of cameras) {
-    camera.sizes = [...new Set(camera.sizes)]
-    camera.frameRates = [...new Set(camera.frameRates)].sort((a, b) => a - b)
-  }
-  return cameras
-}
-
 async function getDeviceCapabilities(serial, force = false) {
   if (typeof serial !== 'string' || !serial || serial.length > 256 || serial.includes('\0')) throw new Error('A valid device serial is required.')
   const runtime = await findRuntime()
-  let installedVersion = 'unknown'
-  if (runtime.scrcpyPath) {
+  // runtimeStatus() already inspected this runtime; only probe again when it has not.
+  let installedVersion = constraintRuntimeVersion || 'unknown'
+  if (runtime.scrcpyPath && !constraintRuntimeVersion) {
     try {
       const versionResult = await runCapture(runtime.scrcpyPath, ['--version'])
       installedVersion = versionResult.output.match(/scrcpy\s+([\w.-]+)/i)?.[1] || 'unknown'
@@ -846,6 +665,28 @@ async function getDeviceCapabilities(serial, force = false) {
   }
 }
 
+function stopSession() {
+  sessionIntent = false
+  desiredGeneration += 1
+  if (applyTimer) { clearTimeout(applyTimer); applyTimer = null }
+  pendingLiveChanges.clear()
+  return enqueueLifecycle(async () => {
+    updateSession({ running: Boolean(activeSession), status: 'stopping', reason: 'manual stop' })
+    await terminateActive('manual stop')
+    appliedArgs = []
+    return updateSession({ running: false, status: 'offline', pid: undefined, stoppedAt: Date.now(), recordingPath: '' })
+  })
+}
+
+// Windows can hold a just-stopped executable for a moment; retry briefly, then
+// leave the folder for the next install or launch to collect.
+async function removeStaleRuntime(directory) {
+  for (let attempt = 0; attempt < 5 && fs.existsSync(directory); attempt += 1) {
+    await fsp.rm(directory, { recursive: true, force: true }).catch(() => {})
+    if (fs.existsSync(directory)) await new Promise((resolve) => setTimeout(resolve, 300))
+  }
+}
+
 function registerIpc() {
   const senderWindow = (event) => {
     const window = BrowserWindow.fromWebContents(event.sender)
@@ -859,6 +700,15 @@ function registerIpc() {
     else if (action === 'toggle-maximize') window.isMaximized() ? window.unmaximize() : window.maximize()
     else if (action === 'close') window.close()
     else throw new Error('Invalid window action.')
+  })
+  ipcMain.handle('app:settings', () => ({ ...appSettings }))
+  ipcMain.handle('app:set-setting', async (event, key, value) => {
+    senderWindow(event)
+    if (!Object.hasOwn(appSettings, key) || typeof value !== 'boolean') throw new Error('Invalid application setting.')
+    appSettings[key] = value
+    await writePreferences({ [key]: value })
+    applyTraySetting()
+    return { ...appSettings }
   })
   ipcMain.handle('runtime:status', runtimeStatus)
   ipcMain.handle('device:list', listDevices)
@@ -878,8 +728,11 @@ function registerIpc() {
   })
   ipcMain.handle('runtime:install', async () => {
     if (process.platform !== 'win32') throw new Error('Managed installation currently supports Windows. Choose an existing binary on this platform.')
+    // A running scrcpy.exe locks the managed runtime; replacing it would fail halfway.
+    if (activeSession || sessionIntent) throw new Error('Stop mirroring before installing or updating Scrcpy.')
     const release = await latestRelease()
-    const archName = process.arch === 'ia32' ? 'win32' : 'win64'
+    // Windows ARM64 archives are published from scrcpy 5.0 onward.
+    const archName = process.arch === 'arm64' ? 'winarm64' : process.arch === 'ia32' ? 'win32' : 'win64'
     const asset = release.assets.find((item) => item.name === `scrcpy-${archName}-v${release.version}.zip`)
     if (!asset) throw new Error(`No ${archName} package was found in the latest official release.`)
     const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'scrcpy-studio-'))
@@ -892,16 +745,40 @@ function registerIpc() {
       if (asset.digest?.startsWith('sha256:')) {
         const digest = createHash('sha256').update(await fsp.readFile(archivePath)).digest('hex')
         if (digest !== asset.digest.slice(7)) throw new Error('The downloaded package failed its SHA-256 verification.')
+      } else {
+        emitLog('error', `GitHub did not publish a SHA-256 digest for ${asset.name}; the download was not verified.`)
       }
       safeSend('runtime:install-progress', { progress: 96, message: 'Verifying and unpacking' })
       const extraction = path.join(tempRoot, 'extracted')
       new AdmZip(archivePath).extractAllTo(extraction, true)
       const roots = await fsp.readdir(extraction, { withFileTypes: true })
       const packageRoot = roots.length === 1 && roots[0].isDirectory() ? path.join(extraction, roots[0].name) : extraction
+      if (!await exists(path.join(packageRoot, 'scrcpy.exe'))) throw new Error('The downloaded package does not contain scrcpy.exe.')
+      // Stage the new runtime beside the old one and swap by rename, so a failed
+      // copy or a locked file never leaves the app without a working runtime.
       const installRoot = path.join(app.getPath('userData'), 'runtime')
-      await fsp.rm(installRoot, { recursive: true, force: true })
+      const stagedRoot = `${installRoot}.new`
+      const previousRoot = `${installRoot}.old`
+      await fsp.rm(stagedRoot, { recursive: true, force: true })
+      await removeStaleRuntime(previousRoot)
+      if (fs.existsSync(previousRoot)) throw new Error('A previous Scrcpy runtime is still in use. Close any running scrcpy or adb process and try again.')
       await fsp.mkdir(path.dirname(installRoot), { recursive: true })
-      await fsp.cp(packageRoot, installRoot, { recursive: true })
+      await fsp.cp(packageRoot, stagedRoot, { recursive: true })
+      const hadPrevious = fs.existsSync(installRoot)
+      try {
+        if (hadPrevious) await fsp.rename(installRoot, previousRoot)
+        await fsp.rename(stagedRoot, installRoot)
+      } catch (error) {
+        if (hadPrevious && !fs.existsSync(installRoot) && fs.existsSync(previousRoot)) await fsp.rename(previousRoot, installRoot).catch(() => {})
+        await fsp.rm(stagedRoot, { recursive: true, force: true }).catch(() => {})
+        throw new Error(`The existing Scrcpy runtime could not be replaced (${error.code || error.message}). Close any running scrcpy or adb process and try again.`)
+      }
+      // The adb server started from the old runtime keeps running and locks its
+      // files. Stop it so the old folder can be deleted; the next device query
+      // starts the server from the new runtime.
+      const managedAdb = path.join(installRoot, 'adb.exe')
+      if (hadPrevious && await exists(managedAdb)) await runCapture(managedAdb, ['kill-server'], { timeoutMs: 5000 }).catch(() => {})
+      await removeStaleRuntime(previousRoot)
       cachedRuntime = null
       capabilityCache.clear()
       safeSend('runtime:install-progress', { progress: 100, message: 'Scrcpy is ready' })
@@ -936,18 +813,7 @@ function registerIpc() {
     if (applyTimer) { clearTimeout(applyTimer); applyTimer = null }
     return enqueueLifecycle(() => reconcileDesired('retry'))
   })
-  ipcMain.handle('scrcpy:stop', async () => {
-    sessionIntent = false
-    desiredGeneration += 1
-    if (applyTimer) { clearTimeout(applyTimer); applyTimer = null }
-    pendingLiveChanges.clear()
-    return enqueueLifecycle(async () => {
-      updateSession({ running: Boolean(activeSession), status: 'stopping', reason: 'manual stop' })
-      await terminateActive('manual stop')
-      appliedArgs = []
-      return updateSession({ running: false, status: 'offline', pid: undefined, stoppedAt: Date.now(), recordingPath: '' })
-    })
-  })
+  ipcMain.handle('scrcpy:stop', stopSession)
   ipcMain.handle('scrcpy:device-presence', async (_event, serial, present) => {
     if (typeof serial !== 'string' || !serial || serial.length > 256) return sessionState
     const desiredSerial = serialFromArgs(desiredArgs)
@@ -971,14 +837,15 @@ function registerIpc() {
     const runtime = await findRuntime(true)
     if (!runtime.scrcpyPath) throw new Error('Scrcpy is not installed or configured.')
     await ensureSelectedDevice(args)
-    emitLog('command', `scrcpy ${args.join(' ')}`)
+    emitLog('command', formatCommand(args))
     const result = await runCapture(runtime.scrcpyPath, args, { cwd: runtime.scrcpyPath === 'scrcpy' ? undefined : path.dirname(runtime.scrcpyPath), timeoutMs: 30000 })
     emitLog(result.code === 0 ? 'info' : 'error', result.output)
     return result
   })
   ipcMain.handle('adb:action', async (_event, action, payload = {}) => {
     const runtime = await findRuntime()
-    const safeValue = (value) => typeof value === 'string' && value.length < 256 && !value.includes('\0')
+    // A leading dash would be read by adb as an option rather than a value.
+    const safeValue = (value) => typeof value === 'string' && value.length < 256 && !value.includes('\0') && !value.startsWith('-')
     const serialArgs = safeValue(payload.serial) && payload.serial ? ['-s', payload.serial] : []
     const actions = {
       connect: ['connect', safeValue(payload.address) ? payload.address : ''],
@@ -1002,6 +869,28 @@ function registerIpc() {
       filters: [{ name: format.toUpperCase(), extensions: [format] }],
     })
     return result.canceled ? '' : result.filePath || ''
+  })
+  ipcMain.handle('profiles:export', async (_event, contents) => {
+    if (typeof contents !== 'string' || contents.length > PROFILE_FILE_LIMIT) throw new Error('Invalid profile export.')
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export profiles',
+      defaultPath: 'pepperon-gui-profiles.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (result.canceled || !result.filePath) return ''
+    await fsp.writeFile(result.filePath, contents, 'utf8')
+    return result.filePath
+  })
+  ipcMain.handle('profiles:import', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import profiles',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    const stats = await fsp.stat(result.filePaths[0])
+    if (stats.size > PROFILE_FILE_LIMIT) throw new Error('That file is too large to be a profile export.')
+    return fsp.readFile(result.filePaths[0], 'utf8')
   })
   ipcMain.handle('shell:open-external', (_event, url) => {
     if (typeof url === 'string' && isAllowedExternalUrl(url)) return shell.openExternal(url)
@@ -1035,7 +924,7 @@ function createWindow() {
   shutdownPrepared = false
   mainWindow = new BrowserWindow({
     title: APP_NAME,
-    icon: app.isPackaged ? path.join(process.resourcesPath, 'icon.ico') : path.join(__dirname, '..', 'build', 'icon.ico'),
+    icon: appIconPath(),
     width: 1480,
     height: 940,
     minWidth: 860,
@@ -1061,9 +950,13 @@ function createWindow() {
   const sendWindowState = () => safeSend('window:state-changed', { maximized: mainWindow.isMaximized() })
   mainWindow.on('maximize', sendWindowState)
   mainWindow.on('unmaximize', sendWindowState)
+  mainWindow.on('minimize', () => { if (appSettings.minimizeToTray) hideToTray() })
   mainWindow.on('close', (event) => {
     if (shutdownPrepared) return
     event.preventDefault()
+    // Closing the window keeps the app (and any session) alive in the tray;
+    // Quit from the tray menu, or any real quit request, still shuts down.
+    if (appSettings.closeToTray && tray && !quitRequested && !shutdownPromise) { hideToTray(); return }
     prepareForShutdown().finally(() => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close()
     })
@@ -1071,6 +964,17 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedExternalUrl(url)) shell.openExternal(url)
     return { action: 'deny' }
+  })
+  // Electron's default zoom-in accelerator is Ctrl+Plus, which needs Shift on most
+  // keyboard layouts, so Ctrl+= never zoomed back in. Handle all three zoom keys
+  // here, including the numeric keypad, and keep the level within a usable range.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || !input.control || input.alt || input.meta) return
+    const step = ['=', '+'].includes(input.key) ? ZOOM_STEP : ['-', '_'].includes(input.key) ? -ZOOM_STEP : input.key === '0' ? 0 : null
+    if (step === null) return
+    event.preventDefault()
+    const contents = mainWindow.webContents
+    contents.setZoomLevel(step === 0 ? 0 : Math.min(ZOOM_LIMIT, Math.max(-ZOOM_LIMIT, contents.getZoomLevel() + step)))
   })
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (url !== mainWindow.webContents.getURL()) event.preventDefault()
@@ -1082,9 +986,21 @@ function createWindow() {
 app.whenReady().then(() => {
   registerIpc()
   createWindow()
+  // Collect a runtime folder that an earlier update could not delete while it was in use.
+  removeStaleRuntime(path.join(app.getPath('userData'), 'runtime.old')).catch(() => {})
+  readPreferences().then((preferences) => {
+    for (const key of Object.keys(appSettings)) appSettings[key] = preferences[key] === true
+    applyTraySetting()
+  })
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+// A tray icon left behind lingers in the notification area until hovered.
+app.on('quit', () => {
+  tray?.destroy()
+  tray = null
 })
 
 app.on('window-all-closed', () => {
@@ -1092,6 +1008,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (event) => {
+  quitRequested = true
   if (shutdownPrepared) return
   event.preventDefault()
   prepareForShutdown().finally(() => app.quit())

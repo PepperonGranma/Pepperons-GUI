@@ -2,8 +2,8 @@
 
 ## Supported version
 
-Security fixes currently target the latest commit on `main`. Pepperon's GUI is
-pre-1.0 and does not promise security backports for older installers.
+Security fixes currently target the latest commit on `main`. Pepperon GUI is
+a community project and does not promise security backports for older installers.
 
 ## Reporting a vulnerability
 

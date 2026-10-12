@@ -1,0 +1,57 @@
+name: Release build
+
+# Builds the unsigned Windows installer from a version tag and attaches it to a
+# DRAFT release. Publishing stays manual: run the device and lifecycle suites in
+# docs/RELEASING.md against the downloaded installer before publishing the draft.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Check the tag matches package.json
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+      - run: npm run build
+      - run: npm test
+      - run: npm run test:installer-shell
+      - name: Package
+        run: npx electron-builder --publish never
+      - run: npm run test:installer-package
+      - run: node scripts/verify-package.cjs
+      - name: Checksums
+        shell: bash
+        run: |
+          cd release
+          sha256sum *.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Create draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A maintainer may already have published the installer they tested by hand.
+          # The clean build above still ran as a check; leave that release untouched.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; nothing uploaded."
+            exit 0
+          fi
+          notes="docs/RELEASE-NOTES-${GITHUB_REF_NAME#v}.md"
+          if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --generate-notes; fi
+          gh release create "$GITHUB_REF_NAME" release/*.exe release/SHA256SUMS.txt --draft --title "Pepperon GUI ${GITHUB_REF_NAME#v}" "$@"

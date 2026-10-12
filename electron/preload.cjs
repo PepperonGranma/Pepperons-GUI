@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('scrcpyStudio', {
     ipcRenderer.on('window:state-changed', listener)
     return () => ipcRenderer.removeListener('window:state-changed', listener)
   },
+  getAppSettings: () => ipcRenderer.invoke('app:settings'),
+  setAppSetting: (key, value) => ipcRenderer.invoke('app:set-setting', key, value),
   getRuntimeStatus: () => ipcRenderer.invoke('runtime:status'),
   chooseRuntime: () => ipcRenderer.invoke('runtime:choose'),
   installRuntime: () => ipcRenderer.invoke('runtime:install'),
@@ -23,6 +25,8 @@ contextBridge.exposeInMainWorld('scrcpyStudio', {
   runScrcpyAction: (args) => ipcRenderer.invoke('scrcpy:run-once', args),
   adbAction: (action, payload) => ipcRenderer.invoke('adb:action', action, payload),
   chooseRecordingPath: (format) => ipcRenderer.invoke('dialog:save-recording', format),
+  exportProfiles: (contents) => ipcRenderer.invoke('profiles:export', contents),
+  importProfiles: () => ipcRenderer.invoke('profiles:import'),
   openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
   onLog: (callback) => {
     const listener = (_event, payload) => callback(payload)

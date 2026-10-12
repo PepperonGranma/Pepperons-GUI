@@ -30,8 +30,8 @@ async function waitFor(check, label, timeout = 30_000) {
 
 async function connect() {
   const targets = await (await fetch(`${DEBUG_URL}/json`, { signal: AbortSignal.timeout(5_000) })).json()
-  const target = targets.find((item) => item.type === 'page' && item.title.replace(/&#39;/g, "'") === "Pepperon's GUI")
-  assert(target?.webSocketDebuggerUrl, "Launch the packaged Pepperon's GUI with remote debugging first")
+  const target = targets.find((item) => item.type === 'page' && item.title.replace(/&#39;/g, "'") === "Pepperon GUI")
+  assert(target?.webSocketDebuggerUrl, "Launch the packaged Pepperon GUI with remote debugging first")
   const socket = new WebSocket(target.webSocketDebuggerUrl)
   await new Promise((resolve, reject) => {
     socket.addEventListener('open', resolve, { once: true })
@@ -69,7 +69,7 @@ async function waitForApplicationExit() {
   await waitFor(async () => {
     try { await fetch(`${DEBUG_URL}/json`, { signal: AbortSignal.timeout(2_000) }); return false } catch { return true }
   }, 'the packaged application to close', 20_000)
-  await waitFor(() => processCount("Pepperon's GUI.exe") === 0, 'packaged application process cleanup', 20_000)
+  await waitFor(() => processCount("Pepperon GUI.exe") === 0, 'packaged application process cleanup', 20_000)
   await waitFor(() => processCount('scrcpy.exe') === 0, 'scrcpy cleanup', 20_000)
 }
 

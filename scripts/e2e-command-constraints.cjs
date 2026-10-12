@@ -4,8 +4,8 @@ const { setTimeout: delay } = require('node:timers/promises')
 async function main() {
   const debugUrl = process.env.SCRCPY_STUDIO_DEBUG_URL || 'http://127.0.0.1:9222'
   const targets = await (await fetch(`${debugUrl}/json`)).json()
-  const target = targets.find(item => item.type === 'page' && item.title.replace(/&#39;/g, "'") === "Pepperon's GUI")
-  assert(target?.webSocketDebuggerUrl, "Launch Pepperon's GUI with remote debugging first")
+  const target = targets.find(item => item.type === 'page' && item.title.replace(/&#39;/g, "'") === "Pepperon GUI")
+  assert(target?.webSocketDebuggerUrl, "Launch Pepperon GUI with remote debugging first")
   const socket = new WebSocket(target.webSocketDebuggerUrl)
   await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }) })
   let nextId = 0
@@ -45,10 +45,10 @@ async function main() {
   try {
     await wait('!document.querySelector(".startup-loader")', 'startup loader')
     const runtime = await evaluate(`window.scrcpyStudio.getRuntimeStatus()`)
-    assert.equal(runtime.installedVersion, '4.1')
+    assert(['4.1', '5.0', '5.0.1'].includes(runtime.installedVersion), `Constraint metadata has not been audited for scrcpy ${runtime.installedVersion}`)
     assert.deepEqual(runtime.options.find(option => option.name === '--max-size').constraints, {
       integer: true, min: 0, max: 65535, unit: 'px', defaultValue: '0 (unlimited)', zeroMeaning: 'unlimited', deviceDependent: true,
-      note: 'Actual maximum resolution depends on the device encoder.', sourceVersion: '4.1', referenceOnly: false,
+      note: 'Actual maximum resolution depends on the device encoder.', sourceVersion: runtime.installedVersion, referenceOnly: false,
     })
 
     assert(await evaluate(`(() => { const button=[...document.querySelectorAll('nav button')].find(button=>button.textContent.includes('All commands')); button?.click(); return Boolean(button) })()`))

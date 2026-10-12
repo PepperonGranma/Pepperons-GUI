@@ -1,34 +1,43 @@
 import { useEffect, useState } from 'react'
-import { Sparkles } from 'lucide-react'
+import { Check, LoaderCircle } from 'lucide-react'
+import mascot from './assets/pepperon.webp'
 
-const messages = [
+export type StartupStage = { label: string; done: boolean }
+
+const asides = [
   'Waking up the control room…',
   'Polishing a suspicious number of pixels…',
   'Checking cables for dramatic tension…',
   'Teaching Pepperon the latest commands…',
 ]
 
-export function StartupLoader({ leaving = false }: { leaving?: boolean }) {
-  const [message, setMessage] = useState(0)
+// The checklist mirrors what the app is really waiting for, so the bar only
+// fills as fast as the runtime, device and session checks actually finish.
+export function StartupLoader({ leaving = false, stages }: { leaving?: boolean; stages: StartupStage[] }) {
+  const [aside, setAside] = useState(0)
   useEffect(() => {
-    const timer = window.setInterval(() => setMessage((value) => (value + 1) % messages.length), 650)
+    const timer = window.setInterval(() => setAside((value) => (value + 1) % asides.length), 900)
     return () => window.clearInterval(timer)
   }, [])
 
-  return <div className={`startup-loader ${leaving ? 'is-leaving' : ''}`} role="status" aria-live="polite" aria-label="Pepperon's GUI is loading">
+  const finished = stages.filter((stage) => stage.done).length
+  const current = stages.findIndex((stage) => !stage.done)
+  const percent = stages.length ? Math.round((finished / stages.length) * 100) : 100
+
+  return <div className={`startup-loader ${leaving ? 'is-leaving' : ''}`} role="status" aria-live="polite" aria-label="Pepperon GUI is loading">
     <div className="startup-loader-grid" aria-hidden="true" />
-    <div className="startup-loader-brand" aria-hidden="true"><Sparkles /><span>PEPPERON'S GUI</span><Sparkles /></div>
-    <div className="squish-stage" aria-hidden="true">
-      <div className="squish-spark spark-a">✦</div><div className="squish-spark spark-b">✦</div>
-      <div className="loader-cat">
-        <span className="loader-cat-ear ear-left" /><span className="loader-cat-ear ear-right" />
-        <div className="loader-cat-head"><i /><i /><b /><em /></div>
-        <div className="loader-cat-body"><span /><span /></div>
-        <div className="loader-cat-tail" />
-      </div>
-      <span className="squish-shadow" />
+    <div className="loader-stage" aria-hidden="true">
+      <span className="loader-orbit orbit-a"><i /></span><span className="loader-orbit orbit-b"><i /></span>
+      <div className="loader-mascot"><img src={mascot} alt="" draggable={false} /></div>
+      <span className="loader-shadow" />
     </div>
-    <div className="startup-loader-copy"><strong>{messages[message]}</strong><span><i /><i /><i /></span></div>
-    <small>ADB · SCRCPY · READY WHEN YOU ARE</small>
+    <div className="loader-title" aria-hidden="true"><strong>Pepperon GUI</strong><span>Android control room</span></div>
+    <ul className="loader-steps">
+      {stages.map((stage, index) => <li key={stage.label} className={stage.done ? 'done' : index === current ? 'active' : ''}>
+        <span aria-hidden="true">{stage.done ? <Check /> : index === current ? <LoaderCircle /> : null}</span>{stage.label}
+      </li>)}
+    </ul>
+    <div className="loader-progress" role="progressbar" aria-label="Startup progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${Math.max(8, percent)}%` }} /></div>
+    <small aria-hidden="true">{asides[aside]}</small>
   </div>
 }

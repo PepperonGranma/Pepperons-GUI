@@ -26,8 +26,8 @@ function fileSummary(file) {
 
 async function main() {
   const targets = await (await fetch(`${DEBUG_URL}/json`)).json()
-  const target = targets.find((item) => item.type === 'page' && item.title.replace(/&#39;/g, "'") === "Pepperon's GUI")
-  assert(target?.webSocketDebuggerUrl, "Start Pepperon's GUI with remote debugging first")
+  const target = targets.find((item) => item.type === 'page' && item.title.replace(/&#39;/g, "'") === "Pepperon GUI")
+  assert(target?.webSocketDebuggerUrl, "Start Pepperon GUI with remote debugging first")
   const socket = new WebSocket(target.webSocketDebuggerUrl)
   await new Promise((resolve, reject) => {
     socket.addEventListener('open', resolve, { once: true })

@@ -168,6 +168,8 @@ export interface StudioConfig {
   maxFps: string
   videoBuffer: string
   crop: string
+  /** Video decoding on the computer (scrcpy 5.0+). 'auto' passes no flag. */
+  hwdec: 'auto' | 'disabled' | 'd3d11va' | 'vaapi' | 'videotoolbox'
   audioEnabled: boolean
   audioCodec: 'opus' | 'aac' | 'flac' | 'raw'
   audioEncoder: string
@@ -225,6 +227,16 @@ export interface ThemeSettings {
   radius: number
   density: 'cozy' | 'compact'
   pattern: boolean
+  /** How much the interface animates. 'off' also disables pointer tilt. */
+  motion: 'full' | 'subtle' | 'off'
+  /** Colour wash behind the pages: drifting, still, or none. */
+  backdrop: 'aurora' | 'static' | 'none'
+  /** 3D tilt of the showpiece elements (phone, previews) toward the pointer. */
+  tilt: boolean
+  /** Soft light that follows the pointer across cards. */
+  spotlight: boolean
+  /** Strength of glows and the backdrop, 0–100. */
+  glow: number
 }
 
 export interface SavedProfile {
@@ -235,7 +247,14 @@ export interface SavedProfile {
   updatedAt: number
 }
 
+export interface AppSettings {
+  minimizeToTray: boolean
+  closeToTray: boolean
+}
+
 export interface StudioApi {
+  getAppSettings(): Promise<AppSettings>
+  setAppSetting(key: keyof AppSettings, value: boolean): Promise<AppSettings>
   getWindowState(): Promise<{ maximized: boolean }>
   windowAction(action: 'minimize' | 'toggle-maximize' | 'close'): Promise<void>
   onWindowState(callback: (state: { maximized: boolean }) => void): () => void
@@ -254,6 +273,10 @@ export interface StudioApi {
   runScrcpyAction(args: string[]): Promise<{ code: number; output: string }>
   adbAction(action: string, payload: Record<string, unknown>): Promise<{ code: number; output: string }>
   chooseRecordingPath(format: string): Promise<string>
+  /** Resolves to the saved path, or '' when the dialog was cancelled. */
+  exportProfiles(contents: string): Promise<string>
+  /** Resolves to the chosen file's text, or null when the dialog was cancelled. */
+  importProfiles(): Promise<string | null>
   openExternal(url: string): Promise<boolean>
   onLog(callback: (payload: Omit<LogEntry, 'id' | 'time'>) => void): () => void
   onState(callback: (payload: SessionState) => void): () => void

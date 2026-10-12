@@ -1,6 +1,6 @@
 # Third-party notices
 
-Pepperon's GUI is licensed under Apache-2.0. The components below retain their
+Pepperon GUI is licensed under Apache-2.0. The components below retain their
 own licenses and are not relicensed by this project.
 
 ## Included in the Windows application
@@ -20,14 +20,15 @@ Feather MIT notice, including its 2013–2023 Cole Bemis copyright, is included
 in full as requested by that upstream license.
 
 Electron's Chromium notice collection covers the runtime libraries embedded in
-that distribution. The CatMark icon and startup cat are project artwork made
-from repository markup and styles. The application uses system fonts and does
-not bundle third-party photos, video, audio, or font files.
+that distribution. The application icon and in-app mascot are the maintainer's
+own drawing (`src/assets/pepperon.webp`), supplied for this project and used as
+is. The application uses system fonts and does not bundle third-party photos,
+video, audio, or font files.
 
 ## Included in the Windows installer
 
 The installer is generated from the MIT-licensed electron-builder 26.16.0 NSIS
-templates. Pepperon's GUI makes a small, documented template adaptation at build
+templates. Pepperon GUI makes a small, documented template adaptation at build
 time; the full upstream notice is in `licenses/electron-builder-MIT.txt`.
 
 | Component | Version | License or permission | Packaged notice |
@@ -50,15 +51,15 @@ functions.
 
 ## Optional scrcpy runtime
 
-scrcpy is **not embedded in the Pepperon's GUI installer**. Users may choose an
+scrcpy is **not embedded in the Pepperon GUI installer**. Users may choose an
 existing installation, or ask the app to download an official Genymobile release
 archive directly from GitHub. The archive is unpacked intact, including its
 `LICENSE.txt`, into the app's user-data directory.
 
-scrcpy 4.1 is Apache-2.0 software developed by Genymobile, Romain Vimont, and
+scrcpy (4.1 through 5.0.1 at the time of writing) is Apache-2.0 software developed by Genymobile, Romain Vimont, and
 contributors. Its Windows archive includes ADB and reports SDL, FFmpeg/libav,
 libusb, and dav1d components. Their notices and license terms remain part of the
-upstream archive and projects; Pepperon's GUI neither modifies nor republishes
+upstream archive and projects; Pepperon GUI neither modifies nor republishes
 those binaries.
 
 - [scrcpy](https://github.com/Genymobile/scrcpy)

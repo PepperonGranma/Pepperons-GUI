@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/PepperonGranma/Pepperons-GUI/security/advisories/new
+    about: Please report security problems privately, not in a public issue.
+  - name: scrcpy itself
+    url: https://github.com/Genymobile/scrcpy/issues
+    about: Problems that also happen when running scrcpy directly belong upstream.

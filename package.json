@@ -1,6 +1,6 @@
 {
   "name": "pepperons-gui",
-  "version": "0.1.4",
+  "version": "1.5.0",
   "private": true,
   "description": "Your Android control room: mirror, tune, record, and command scrcpy without memorizing every flag",
   "license": "Apache-2.0",
@@ -34,6 +34,7 @@
     "preview": "vite preview",
     "start": "electron .",
     "start:debug": "electron . --remote-debugging-port=9222",
+    "test": "node --test \"test/*.test.mjs\" && node scripts/test-command-constraints.cjs",
     "test:device": "node scripts/e2e-connected-device.cjs",
     "test:commands": "node scripts/e2e-command-profile.cjs",
     "test:hardening": "node scripts/e2e-hardening.cjs",
@@ -69,7 +70,7 @@
   "build": {
     "beforePack": "scripts/prepare-installer.cjs",
     "appId": "studio.scrcpy.desktop",
-    "productName": "Pepperon's GUI",
+    "productName": "Pepperon GUI",
     "copyright": "Copyright © 2026 PepperonGranma",
     "files": [
       "dist/**/*",
@@ -82,13 +83,32 @@
       "buildResources": "build"
     },
     "extraResources": [
-      { "from": "build/icon.ico", "to": "icon.ico" },
-      { "from": "LICENSE", "to": "LICENSE.txt" },
-      { "from": "THIRD_PARTY_NOTICES.md", "to": "THIRD_PARTY_NOTICES.md" },
-      { "from": "licenses", "to": "licenses" }
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      },
+      {
+        "from": "LICENSE",
+        "to": "LICENSE.txt"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "licenses",
+        "to": "licenses"
+      }
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.ico",
       "signExecutable": false
     },
@@ -97,8 +117,8 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico",
-      "shortcutName": "Pepperon's GUI",
-      "uninstallDisplayName": "Pepperon's GUI",
+      "shortcutName": "Pepperon GUI",
+      "uninstallDisplayName": "Pepperon GUI",
       "deleteAppDataOnUninstall": false,
       "packElevateHelper": false
     }

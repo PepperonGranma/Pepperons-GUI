@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import mascot from './assets/pepperon.webp'
+import type { NavId } from './types'
 import {
   ArrowLeft, ArrowRight, AudioLines, Check, Command, Gamepad2, Monitor,
-  Palette, Play, Radio, SlidersHorizontal, Smartphone, Sparkles, Usb, Video, X,
+  Palette, Pause, Play, Radio, SlidersHorizontal, Smartphone, Sparkles, Usb, Video, X,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -12,16 +14,23 @@ type TourStep = {
   icon: LucideIcon
   scene: 'welcome' | 'connect' | 'mix' | 'theme' | 'launch'
   note: string
+  /** The real page shown behind the dialog while this step is on screen. */
+  page: NavId
+  pageLabel: string
 }
+
+// How long a step stays up while the tour plays itself.
+const STEP_MS = 6500
 
 const TOUR_STEPS: TourStep[] = [
   {
     kicker: 'WELCOME, EXPLORER',
     title: 'Meet your Android control room',
-    copy: 'Pepperon’s GUI puts mirroring, recording, sound, controls, and every scrcpy flag behind one friendly dashboard.',
+    copy: 'Pepperon GUI puts mirroring, recording, sound, controls, and every scrcpy flag behind one friendly dashboard.',
     icon: Sparkles,
     scene: 'welcome',
     note: 'No command-line treasure map required.',
+    page: 'studio', pageLabel: 'Studio',
   },
   {
     kicker: 'STEP ONE · DEVICE LINK',
@@ -30,6 +39,7 @@ const TOUR_STEPS: TourStep[] = [
     icon: Usb,
     scene: 'connect',
     note: 'Wireless ADB is waiting in Studio when cables cramp your style.',
+    page: 'studio', pageLabel: 'Studio',
   },
   {
     kicker: 'BUILD YOUR MIX',
@@ -38,14 +48,16 @@ const TOUR_STEPS: TourStep[] = [
     icon: SlidersHorizontal,
     scene: 'mix',
     note: 'Eligible in-session changes apply automatically; the rest restart cleanly.',
+    page: 'video', pageLabel: 'Video',
   },
   {
     kicker: 'MAKE IT YOURS',
     title: 'Your colors. Your corners. Your vibe.',
-    copy: 'Switch between light and dark, then customize accents, Highlight, panel colors, spacing, rounding, and background patterns.',
+    copy: 'Switch between light and dark, then customize accents, Highlight, panel colors, spacing, rounding, motion, 3D tilt and the backdrop.',
     icon: Palette,
     scene: 'theme',
     note: 'The Appearance page is where sensible themes become suspiciously personal.',
+    page: 'appearance', pageLabel: 'Appearance',
   },
   {
     kicker: 'READY FOR ACTION',
@@ -54,13 +66,14 @@ const TOUR_STEPS: TourStep[] = [
     icon: Play,
     scene: 'launch',
     note: 'CTRL + K finds any command. Mirroring remains local to this PC.',
+    page: 'studio', pageLabel: 'Studio',
   },
 ]
 
 function TourScene({ scene }: { scene: TourStep['scene'] }) {
   if (scene === 'welcome') return <div className="tour-scene tour-welcome-scene" aria-hidden="true">
     <span className="tour-orbit orbit-one" /><span className="tour-orbit orbit-two" />
-    <div className="tour-phone"><span /><Smartphone /></div>
+    <div className="tour-phone"><span /><div className="tour-mascot"><img src={mascot} alt="" draggable={false} /></div></div>
     <i className="tour-satellite satellite-video"><Video /></i>
     <i className="tour-satellite satellite-audio"><AudioLines /></i>
     <i className="tour-satellite satellite-control"><Gamepad2 /></i>
@@ -92,23 +105,41 @@ function TourScene({ scene }: { scene: TourStep['scene'] }) {
   </div>
 }
 
-export function FirstRunTour({ open, onFinish }: { open: boolean; onFinish(): void }) {
+export function FirstRunTour({ open, autoPlay = false, onNavigate, onFinish }: { open: boolean; autoPlay?: boolean; onNavigate?(page: NavId): void; onFinish(): void }) {
   const [step, setStep] = useState(0)
+  const [playing, setPlaying] = useState(false)
   const dialog = useRef<HTMLDivElement>(null)
   const current = TOUR_STEPS[step]
 
   useEffect(() => {
     if (!open) return
     setStep(0)
+    setPlaying(autoPlay)
     window.setTimeout(() => dialog.current?.querySelector<HTMLButtonElement>('[data-tour-focus]')?.focus(), 0)
-  }, [open])
+  }, [open, autoPlay])
+
+  // Show the page each step describes behind the dialog.
+  useEffect(() => {
+    if (open) onNavigate?.(TOUR_STEPS[step].page)
+  }, [open, step, onNavigate])
+
+  // While playing, steps advance on their own and stop on the last one.
+  useEffect(() => {
+    if (!open || !playing) return
+    if (step >= TOUR_STEPS.length - 1) { setPlaying(false); return }
+    const timer = window.setTimeout(() => setStep((value) => Math.min(value + 1, TOUR_STEPS.length - 1)), STEP_MS)
+    return () => window.clearTimeout(timer)
+  }, [open, playing, step])
+
+  // Stepping by hand hands control back to the reader.
+  const goTo = (next: number) => { setPlaying(false); setStep(next) }
 
   useEffect(() => {
     if (!open) return
     const handleKey = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') onFinish()
-      if (event.key === 'ArrowRight' && step < TOUR_STEPS.length - 1) setStep((value) => value + 1)
-      if (event.key === 'ArrowLeft' && step > 0) setStep((value) => value - 1)
+      if (event.key === 'ArrowRight' && step < TOUR_STEPS.length - 1) { setPlaying(false); setStep((value) => value + 1) }
+      if (event.key === 'ArrowLeft' && step > 0) { setPlaying(false); setStep((value) => value - 1) }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
@@ -137,15 +168,17 @@ export function FirstRunTour({ open, onFinish }: { open: boolean; onFinish(): vo
         <h1 id="tour-title">{current.title}</h1>
         <p>{current.copy}</p>
         <div className="tour-note"><Sparkles /><span>{current.note}</span></div>
+        {onNavigate && <div className="tour-page-hint"><Monitor /><span>Showing {current.pageLabel} behind this card</span></div>}
       </div>
       <div className="tour-footer">
-        <div className="tour-progress" aria-label={`Step ${step + 1} of ${TOUR_STEPS.length}`}>
-          {TOUR_STEPS.map((item, index) => <button type="button" key={item.title} className={index === step ? 'active' : index < step ? 'complete' : ''} onClick={() => setStep(index)} aria-label={`Open tour step ${index + 1}`} aria-current={index === step ? 'step' : undefined}><span /></button>)}
+        <div className={`tour-progress ${playing ? 'playing' : ''}`} style={{ '--tour-step-ms': `${STEP_MS}ms` } as CSSProperties} aria-label={`Step ${step + 1} of ${TOUR_STEPS.length}`}>
+          {TOUR_STEPS.map((item, index) => <button type="button" key={item.title} className={index === step ? 'active' : index < step ? 'complete' : ''} onClick={() => goTo(index)} aria-label={`Open tour step ${index + 1}`} aria-current={index === step ? 'step' : undefined}><span /></button>)}
         </div>
         <span className="tour-count">{String(step + 1).padStart(2, '0')} / {String(TOUR_STEPS.length).padStart(2, '0')}</span>
         <div className="tour-nav">
-          {step > 0 ? <button className="tour-back" type="button" onClick={() => setStep((value) => value - 1)}><ArrowLeft />Back</button> : <button className="tour-skip" type="button" onClick={onFinish}>Skip tour</button>}
-          <button className="tour-next" type="button" onClick={() => last ? onFinish() : setStep((value) => value + 1)}>{last ? <><Check />Enter the control room</> : <>Next<ArrowRight /></>}</button>
+          {!last && <button className="tour-play" type="button" aria-pressed={playing} onClick={() => setPlaying((value) => !value)} title={playing ? 'Pause the tour' : 'Let the tour play by itself'}>{playing ? <Pause /> : <Play />}<span>{playing ? 'Pause' : 'Play tour'}</span></button>}
+          {step > 0 ? <button className="tour-back" type="button" onClick={() => goTo(step - 1)}><ArrowLeft />Back</button> : <button className="tour-skip" type="button" onClick={onFinish}>Skip tour</button>}
+          <button className="tour-next" type="button" onClick={() => last ? onFinish() : goTo(step + 1)}>{last ? <><Check />Enter the control room</> : <>Next<ArrowRight /></>}</button>
         </div>
       </div>
     </div>

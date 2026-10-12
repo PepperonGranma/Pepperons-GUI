@@ -21,3 +21,7 @@ export function constraintsFor(name: string, runtimeVersion?: string): CliConstr
 export function withConstraints<T extends { name: string; description: string; source?: string }>(option: T, runtimeVersion?: string): T & { constraints?: CliConstraints }
 export function allowedDescription(constraints: CliConstraints): string
 export function validateConstraint(value: string, constraints?: CliConstraints): string
+export const AUDITED_VERSIONS: string[]
+export const CONSTRAINT_VERSION: string
+export function auditedVersion(runtimeVersion?: string): string
+export function isNewerVersion(candidate: string, current: string): boolean
